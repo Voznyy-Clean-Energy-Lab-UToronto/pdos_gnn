@@ -13,7 +13,6 @@ from models.crystal_model import ProDosNet
 
 class Scaler(object):
     """ Scale a Tensor and restore it later. """
-
     def __init__(self, tensor):
         """tensor is taken as a sample to calculate the min and max"""
         self.min = torch.min(tensor)
@@ -63,9 +62,77 @@ class Predictor():
         return output_and_id
 
 
+def save_model(state, epoch, save_path=None, fold=None, best=False, init=False):
+    if fold is not None:
+        filename= f'test_outputs/%s/checkpoint_fold_{fold+1}_{epoch}.pth.tar'%save_path
+    else:
+        filename= f'test_outputs/%s/checkpoint_fold_{epoch}.pth.tar'%save_path
+    if best:
+        torch.save(state, filename.removesuffix(f"_{epoch}.pth.tar")+"_best"+".pth.tar")
+    elif init:
+        torch.save(state, f'test_outputs/%s/model_init.pth.tar'%save_path)
+    else:
+        torch.save(state, filename)
+
+
+def save_training_curves(fold, training_curve_list, training_curve_name_list, save_path):
+    training_curves_dict = dict(zip(training_curve_name_list, training_curve_list))
+    with open('test_outputs/%s/training_curves_fold_%d.json' % (save_path, fold), 'w') as tc_file:
+        json.dump(training_curves_dict, tc_file)
+
+
+def save_cv_results(folds, error_type_list, cv_lists, mean_list, std_list, save_path):
+    fold_dict = dict(zip(error_type_list, cv_lists))
+    fold_dict["Folds"] = range(1, folds+1)
+    fold_df = pd.DataFrame(data=fold_dict)
+    
+    results_dict =  {"Error type": error_type_list, "Mean errors": mean_list, "Error standard deviation": std_list}
+    result_df = pd.DataFrame(data=results_dict)
+
+    fold_df.to_csv("test_outputs/%s/fold_stats.csv"%save_path, sep='\t')
+    result_df.to_csv("test_outputs/%s/results.csv"%save_path, sep='\t')
+
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+        print(" \n Total training results: ")
+        print(result_df.to_string(index=False))
+
+
+def print_output(epoch, train_pdos_rmse, val_pdos_rmse, train_cdf_pdos_rmse, val_cdf_pdos_rmse):
+    print("Epoch: {},   Training PDOS RMSE: {:.4f}, Val PDOS RMSE: {:.4f}, Trainin CDF PDOS RMSE: {:.4f}, Val CDF PDOS RMSE: {:.4f}".format(epoch, train_pdos_rmse, val_pdos_rmse, train_cdf_pdos_rmse, val_cdf_pdos_rmse))
+
+
+def plot_training_curve(save_path, val_loss_list, val_rmse_dos_list, val_rmse_pdos_list, train_loss_list, train_rmse_dos_list, train_rmse_pdos_list, fold):
+    """
+        Creats training curve plots for experiment metrics
+        --------------------------------------------------
+        Input:
+            - save_path:    Path where plots will be saved
+    """
+    epochs = range(1, len(val_loss_list)+1)
+    fig = plt.figure(figsize=(12,5))
+    ax1 = fig.add_subplot(121)
+    ax2 = fig.add_subplot(122)
+    ax1.set_xlabel('epochs')
+    ax1.set_ylabel('Loss')
+    ax1.plot(epochs, train_loss_list, label = "Training Loss", color = 'tab:olive')
+    ax1.plot(epochs, val_loss_list, label = "Validation Loss", color = 'tab:green')
+    ax1.tick_params(axis='y')
+    ax1.set_yscale('log')
+    ax2.plot(epochs, train_rmse_dos_list, label = 'Train DOS RMSE', color = 'tab:blue')
+    ax2.plot(epochs, val_rmse_dos_list, label = 'Validation DOS RMSE', color = 'tab:red')
+    ax2.plot(epochs, train_rmse_pdos_list, label = 'Train PDOS RMSE', color = 'tab:orange')
+    ax2.plot(epochs, val_rmse_pdos_list, label = "Validation PDOS RMSE", color = 'tab:purple')
+    ax2.set_ylabel('RMSE')
+    ax2.set_xlabel('Epochs')
+    ax2.tick_params(axis='y')
+    ax2.set_yscale('log')
+    ax1.legend(loc = 'best')
+    ax2.legend(loc = 'best')
+    fig.tight_layout()
+    plt.title("Training Curve", loc='center')
+    plt.savefig(f'test_outputs/%s/trainingcurve_fold_{fold}'%save_path + '.png')
 
 def plot_output_distribution(data, data_pred, epoch):
- 
     data = data.detach().numpy().flatten()
     data_pred = data_pred.detach().numpy().flatten()
     import seaborn as sns

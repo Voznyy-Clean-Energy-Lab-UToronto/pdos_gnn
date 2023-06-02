@@ -1,3 +1,21 @@
+
+import os
+import wandb
+import torch
+import itertools
+import numpy as np
+import pandas as pd
+from ray import tune
+import torch.nn as nn
+import torch.optim as optim
+import matplotlib.pyplot as plt
+from utilities.utils import Scaler
+from utilities.data import MaterialData
+from sklearn.model_selection import KFold
+from torch_geometric.loader import DataLoader
+from utilities.utils import save_model, save_training_curves, save_cv_results
+
+
 def run_cross_validation(config, args, save_path):
     """
         Run k-fold cross-validation on training/validation dataset
@@ -11,12 +29,8 @@ def run_cross_validation(config, args, save_path):
             - Saves and plots trainig curves
             - Saves models checkpoints 
     """
-    if args.model_name == "crystal_model_spd":
-        from models.crystal_model_spd import ProDosNet
-    elif args.model_name == "cgcnn_model_spd":
-        from models.cgcnn_model_spd import ProDosNet
-    elif args.model_name == "crystal_model_spd_add":
-        from models.crystal_model_spd_add import ProDosNet
+    if args.model_name == "crystal_model":
+        from models.crystal_model import ProDosNet
     else:
         print(f"Model {args.model_name} is not available")
         return None

@@ -3,14 +3,10 @@ import json
 import torch
 import warnings
 import numpy as np
-import pandas as pd
-import torch.nn as nn
-import matplotlib.pyplot as plt
+from torch_geometric.data import Data
 from scipy.interpolate import interp1d
-from models.crystal_model import ProDosNet
 from scipy.ndimage import gaussian_filter1d
 from pymatgen.core.structure import Structure
-from torch_geometric.data import Data
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.electronic_structure.core import Orbital
 from pymatgen.electronic_structure.dos import CompleteDos
