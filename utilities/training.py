@@ -5,7 +5,6 @@ import torch
 import itertools
 import numpy as np
 import pandas as pd
-from ray import tune
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
@@ -237,35 +236,6 @@ def run_test(args, save_path, test_loader, model):
         print(result_df.to_string(index=False))
 
 
-def run_hyperparameter_tuning(config, args, train_loader, validation_loader):
-    """
-        Runs hyperparameter tuning experiment for selected configuration
-        ----------------------------------------------------------------
-        Input:
-            - config:             Hyperparameters for this experiment
-            - args:               Set of user-defined arguments
-            - train_loader:       torch_geometric DataLoader for training set
-            - validation_loader:  torch_geometric DataLoader for validation set
-    """
-    model = ProDosNet(orig_atom_fea_len=config["orig_atom_fea_len"], nbr_fea_len=config["nbr_fea_len"], n_conv=config["n_conv"], use_mlp=args.use_mlp)
-    if args.cuda:
-        device = torch.device("cuda")
-        model = nn.DataParallel(model)
-        model.to(device)
-    metric = nn.MSELoss()
-    if config["weight_decay"] == 0.0:
-        optimizer = optim.Adam(model.parameters())
-    else:
-        optimizer = optim.AdamW(model.parameters(), weight_decay=config["weight_decay"])
-    for epoch in range(1, args.epochs+1):
-        train_loss, train_rmse_dos, train_rmse_pdos, train_cdf_rmse_dos, train_cdf_rmse_pdos, train_rmse_atomic_dos, train_cdf_rmse_atomic_dos = train(
-            model, optimizer, metric, epoch, train_loader, train_on_dos=args.train_on_dos, train_on_atomic_dos=args.train_on_atomic_dos, save_output=args.save_train_output, use_cuda=args.cuda, use_cdf=args.use_cdf)
-        val_loss, val_rmse_dos, val_rmse_pdos, val_cdf_rmse_dos, val_cdf_rmse_pdos, val_rmse_atomic_dos, val_cdf_rmse_atomic_dos = validation(
-            model, metric, fold=None, epoch=epoch, n_epochs=args.epochs, save_path=None, validation_loader=validation_loader, train_on_dos=args.train_on_dos, train_on_atomic_dos=args.train_on_atomic_dos, save_output=False, use_cuda=args.cuda, use_cdf=args.use_cdf)
-        
-        tune.report(loss=(val_loss / val_steps), accuracy=correct / total)
-
-    
 
 def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, train_on_atomic_dos=False, use_cuda=False, use_cdf=False, scaler=None):
     model.train()

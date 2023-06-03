@@ -6,16 +6,14 @@ import random
 import argparse
 import numpy as np
 import pandas as pd
-from ray import tune
 import torch.nn as nn
 from datetime import date
-from functools import partial
 from utilities.data import MaterialData
+from models.crystal_model import ProDosNet
 from utilities.preprocess import CrystalGraphPDOS
-from ray.tune.schedulers import ASHAScheduler
 from torch_geometric.loader import DataLoader
 from utilities.utils import plot_output_distribution
-from utilities.training import run_cross_validation, run_hyperparameter_tuning, run_test
+from utilities.training import run_cross_validation, run_test
 
 def main(args):
     # Set random seeds 
@@ -84,44 +82,6 @@ def main(args):
         if failed_ids:
             print(f" The list of failed ids can be found at {failed_to_process_ids_file}")
         print(f" Processed data saved to {args.save_data_dir}")
-        
-
-    # If task is hyper_optim, start hyperparameter tuning 
-    if args.task == "hyper_optim":
-        # Define parameter search space
-        search_space = {
-        "l1": tune.grid_seach([128, 32, 64]),
-        "l2": tune.grid_seach([16, 32, 64]),
-        "atom_fea_len": tune.grid_seach([32, 64, 128]),
-        "batch_size": tune.grid_seach([16, 32, 64]),
-        "weight_decay": tune.grid_seach([16, 32, 64])
-        }
-        # Load training and validation data
-        train_subsampler = torch.utils.data.SubsetRandomSampler(train_ids)
-        validation_subsampler = torch.utils.data.SubsetRandomSampler(val_ids)
-        train_loader = DataLoader(dataset, batch_size=args.batch_size, sampler=train_subsampler)
-        validation_loader = DataLoader(dataset, batch_size=args.batch_size, sampler=validation_subsampler)
-        # Set up tuner
-        tuner = tune.Tuner(
-            tune.with_resources(partial(run_hyperparameter_tuning, args=args, train_loader=train_loader, validation_loader=validation_loader),
-                                {"cpu": 1, "gpu": torch.cuda.device_count()}),
-            tune_config=tune.TuneConfig(
-                num_samples=3**5,
-                scheduler=ASHAScheduler(metric="loss",
-                                        mode="min",
-                                        max_t=args.epochs,
-                                        grace_period=3,
-                                        reduction_factor=2),),
-            param_space=search_space)
-    
-        results = tuner.fit()
-        results.get_dataframe().to_csv(os.path.join(save_path, "tuning_results.csv"))
-
-        best_trial = results.get_best_result("loss", "min", "last")
-        print(" Best trial config: {}".format(best_trial.config))
-        with open(os.path.join(save_path, 'best_trial_config.json'), 'w') as f:
-            json.dump(best_trial.config, f)
-        print("------------------------ Finished Hyperparemeter Tuning ------------------------ \n")
 
 
     # If task is cross_val, start cross-validation run
@@ -198,8 +158,8 @@ if __name__ == '__main__':
     parser.add_argument("--model_name", default="crystal_model_spd",
                         help="Provide model name. Default: crystal_model_spd")
 
-    parser.add_argument("--task", choices=['preprocess', 'hyper_optim', 'cross_val', 'test', 'predict'], default="train_cv",
-                        help="Choose task from available options: \n run_preprocess - preprocess cif files and PDOS data into graphs ")
+    parser.add_argument("--task", choices=['preprocess', 'cross_val', 'test', 'predict'], default="train_cv",
+                        help="Choose task from available options ")
                         
     parser.add_argument("--train_ids", default="train_ids.csv",
                         help="Provide csv file with mp-ids for k-fold cross-validation. Default: train_ids.csv")

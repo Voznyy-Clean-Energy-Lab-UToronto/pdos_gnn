@@ -6,10 +6,8 @@ import numpy as np
 import pandas as pd
 import torch.nn as nn
 import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d
 from models.crystal_model import ProDosNet
 from typing import List
-
 
 
 class Scaler(object):
