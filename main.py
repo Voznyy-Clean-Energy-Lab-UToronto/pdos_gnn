@@ -15,7 +15,7 @@ from utilities.preprocess import CrystalGraphPDOS
 from ray.tune.schedulers import ASHAScheduler
 from torch_geometric.loader import DataLoader
 from utilities.utils import plot_output_distribution
-from utilities.training import run_cross_validation
+from utilities.training import run_cross_validation, run_hyperparameter_tuning, run_test
 
 def main(args):
     # Set random seeds 
@@ -225,13 +225,13 @@ if __name__ == '__main__':
     parser.add_argument("--max_num_nbr", default=12, type=int, 
                         help="Provide maximum number of neighbours in crystal graph. Default: 12")
 
-    parser.add_argument("--max_element", default=100, type=int, 
-                        help="Provide atomic number of most heavy element allowed in dataset. Default: 100")
+    parser.add_argument("--max_element", default=83, type=int, 
+                        help="Provide atomic number of most heavy element allowed in dataset. Default: 83")
     
     parser.add_argument("--radius", default=8.0, type=float, 
                         help="Provide maximum distance to neighbour in crystal graph in A. Default: 8 A")
     
-    parser.add_argument("--sigma", default=0.2, type=float, 
+    parser.add_argument("--sigma", default=0.3, type=float, 
                         help="Provide DOS broadening parameter. Default: 0.2")
     
     parser.add_argument("--grid", default=256, type=int, 

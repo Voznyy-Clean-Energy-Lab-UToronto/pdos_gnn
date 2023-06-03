@@ -13,10 +13,10 @@ from utilities.utils import Scaler
 from utilities.data import MaterialData
 from sklearn.model_selection import KFold
 from torch_geometric.loader import DataLoader
-from utilities.utils import save_model, save_training_curves, save_cv_results
+from utilities.utils import save_model, save_training_curves, save_cv_results, print_output, plot_training_curve
 
 
-def run_cross_validation(config, args, save_path):
+def run_cross_validation(config: dict, args, save_path: str):
     """
         Run k-fold cross-validation on training/validation dataset
         ----------------------------------------------------------
@@ -166,8 +166,8 @@ def run_cross_validation(config, args, save_path):
                     model_state_best = {'epoch': epoch, 'state_dict': model.state_dict(), 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss,
                                     'best_val_pdos_rmse': best_val_pdos_rmse, 'best_train_pdos_rmse': best_train_pdos_rmse, 'best_val_cdf_pdos_rmse': best_val_cdf_pdos_rmse, 'best_train_cdf_pdos_rmse': best_train_cdf_pdos_rmse, 'optimizer': optimizer.state_dict(), 'args': vars(args)}
             
-          #  if args.plot_training and epoch % args.plot_interval == 0:
-          #      plot_training_curve(save_path, val_loss_list, val_rmse_dos_list, val_rmse_pdos_list, train_loss_list, train_rmse_dos_list, train_rmse_pdos_list, fold=fold+1)
+            if args.plot_training and epoch % args.plot_interval == 0:
+                plot_training_curve(save_path, val_loss_list, train_loss_list, fold=fold+1)
             if epoch % args.model_save_interval==0:
                 model_state_best = {'epoch': epoch, 'state_dict': model.state_dict(), 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss,
                                     'best_val_pdos_rmse': best_val_pdos_rmse, 'best_train_pdos_rmse': best_train_pdos_rmse, 'best_val_cdf_pdos_rmse': best_val_cdf_pdos_rmse, 'best_train_cdf_pdos_rmse': best_train_cdf_pdos_rmse, 'optimizer': optimizer.state_dict(), 'args': vars(args)}
@@ -281,9 +281,6 @@ def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, tra
         if use_cuda:
             device = torch.device('cuda')
             data = data.to(device)
-
-      #  if (epoch-1)%10 == 0:
-      #      plot_output_distribution(target_pdos, output_pdos, epoch=(epoch-1))
 
         if use_cdf: 
 
@@ -424,7 +421,6 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
             else:
                 loss = metric(torch.flatten(output_atomic_dos), torch.flatten(target_atomic_dos))
         else:
-
             if use_cdf: 
 
                 if scaler is not None:

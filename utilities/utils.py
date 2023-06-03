@@ -8,6 +8,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from models.crystal_model import ProDosNet
+from typing import List
 
 
 
@@ -62,15 +63,21 @@ class Predictor():
         return output_and_id
 
 
-def save_model(state, epoch, save_path=None, fold=None, best=False, init=False):
+def save_model(state: dict, epoch: int, save_path: str = None, fold: int = None, best: bool = False, init: bool = False):
+    """
+        Saves PyTorch model state
+        -------------------------
+    """
+
     if fold is not None:
-        filename= f'test_outputs/%s/checkpoint_fold_{fold+1}_{epoch}.pth.tar'%save_path
+        filename = f'test_outputs/%s/checkpoint_fold_{fold+1}_{epoch}.pth.tar' % save_path
     else:
-        filename= f'test_outputs/%s/checkpoint_fold_{epoch}.pth.tar'%save_path
+        filename = f'test_outputs/%s/checkpoint_fold_{epoch}.pth.tar' % save_path
     if best:
-        torch.save(state, filename.removesuffix(f"_{epoch}.pth.tar")+"_best"+".pth.tar")
+        torch.save(state, filename.removesuffix(
+            f"_{epoch}.pth.tar")+"_best"+".pth.tar")
     elif init:
-        torch.save(state, f'test_outputs/%s/model_init.pth.tar'%save_path)
+        torch.save(state, f'test_outputs/%s/model_init.pth.tar' % save_path)
     else:
         torch.save(state, filename)
 
@@ -97,38 +104,28 @@ def save_cv_results(folds, error_type_list, cv_lists, mean_list, std_list, save_
         print(result_df.to_string(index=False))
 
 
-def print_output(epoch, train_pdos_rmse, val_pdos_rmse, train_cdf_pdos_rmse, val_cdf_pdos_rmse):
+def print_output(epoch: int, train_pdos_rmse: float, val_pdos_rmse: float, train_cdf_pdos_rmse: float, val_cdf_pdos_rmse: float):
     print("Epoch: {},   Training PDOS RMSE: {:.4f}, Val PDOS RMSE: {:.4f}, Trainin CDF PDOS RMSE: {:.4f}, Val CDF PDOS RMSE: {:.4f}".format(epoch, train_pdos_rmse, val_pdos_rmse, train_cdf_pdos_rmse, val_cdf_pdos_rmse))
 
 
-def plot_training_curve(save_path, val_loss_list, val_rmse_dos_list, val_rmse_pdos_list, train_loss_list, train_rmse_dos_list, train_rmse_pdos_list, fold):
+def plot_training_curve(save_path: str, val_loss_list: List, train_loss_list: List, fold: int):
     """
         Creats training curve plots for experiment metrics
         --------------------------------------------------
         Input:
-            - save_path:    Path where plots will be saved
+            - save_path:            Path where plots will be saved
+            - val_loss_list:        List with validation loss values
+            - train_loss_list:      List with training loss values
+            - fold:                 Training fold number 
     """
     epochs = range(1, len(val_loss_list)+1)
-    fig = plt.figure(figsize=(12,5))
-    ax1 = fig.add_subplot(121)
-    ax2 = fig.add_subplot(122)
-    ax1.set_xlabel('epochs')
-    ax1.set_ylabel('Loss')
-    ax1.plot(epochs, train_loss_list, label = "Training Loss", color = 'tab:olive')
-    ax1.plot(epochs, val_loss_list, label = "Validation Loss", color = 'tab:green')
-    ax1.tick_params(axis='y')
-    ax1.set_yscale('log')
-    ax2.plot(epochs, train_rmse_dos_list, label = 'Train DOS RMSE', color = 'tab:blue')
-    ax2.plot(epochs, val_rmse_dos_list, label = 'Validation DOS RMSE', color = 'tab:red')
-    ax2.plot(epochs, train_rmse_pdos_list, label = 'Train PDOS RMSE', color = 'tab:orange')
-    ax2.plot(epochs, val_rmse_pdos_list, label = "Validation PDOS RMSE", color = 'tab:purple')
-    ax2.set_ylabel('RMSE')
-    ax2.set_xlabel('Epochs')
-    ax2.tick_params(axis='y')
-    ax2.set_yscale('log')
-    ax1.legend(loc = 'best')
-    ax2.legend(loc = 'best')
-    fig.tight_layout()
+    fig = plt.figure(figsize=(12,8))
+    plt.set_xlabel('epochs')
+    plt.set_ylabel('Loss')
+    plt.plot(epochs, train_loss_list, label = "Training Loss", color = 'tab:olive')
+    plt.plot(epochs, val_loss_list, label = "Validation Loss", color = 'tab:green')
+    plt.yscale('log')
+    plt.legend(loc = 'best')
     plt.title("Training Curve", loc='center')
     plt.savefig(f'test_outputs/%s/trainingcurve_fold_{fold}'%save_path + '.png')
 

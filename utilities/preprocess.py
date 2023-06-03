@@ -3,6 +3,8 @@ import json
 import torch
 import warnings
 import numpy as np
+from typing import Union, List
+from torch import Tensor, LongTensor
 from torch_geometric.data import Data
 from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
@@ -22,13 +24,28 @@ class GaussianDistance(object):
 
     def expand(self, distances):
         return np.exp(-(distances[..., np.newaxis] - self.filter)**2/self.var**2)
+    
 
 class CrystalGraphPDOS():
     """
         Class to construct graph representation of materials with Projected Density of States as target property
     """
-    def __init__(self, dos_dir, cif_dir, radius=8, max_num_nbr=12, sigma=0.2, bound_low=-20,
-                 bound_high=10, grid=256, max_element=83, norm_pdos=False, total_dos_norm_limits=0.5, pdos_norm_limits=0.5):
+    def __init__(self, 
+                 dos_dir: str, 
+                 cif_dir: str, 
+                 radius: int = 8, 
+                 max_num_nbr: int = 12, 
+                 sigma: float = 0.3, 
+                 bound_low: float = -20.0,
+                 bound_high: float = 10.0,
+                 grid: int = 256, 
+                 max_element: int = 83, 
+                 n_orbitals: int = 9,
+                 gauss_distance_min: float = 0.0,
+                 gauss_distance_max: float = 8.0,
+                 gauss_distance_step: float = 0.2,
+                 norm_pdos: bool = False
+                 ):
         """
             Holds initial parametes
             -----------------------
@@ -41,9 +58,10 @@ class CrystalGraphPDOS():
             - bound_high:   Higher boundary of DOS energy window (eV)
             - grid:         Number of density grid points
             - max_element:  Maximum element number in the crystal
+            - n_orbitals:   Number of orbitals per atom (default=9; 1s, 3p, 5d orbitals)
             - norm_pdos:    Normalize PDOS if True
         """
-        
+
         self.dos_dir = dos_dir
         self.cif_dir = cif_dir
         self.radius = radius
@@ -53,25 +71,26 @@ class CrystalGraphPDOS():
         self.grid = grid
         self.max_num_nbr = max_num_nbr
         self.max_element = max_element
+        self.n_orbitals = n_orbitals
+        self.gauss_distance_max = gauss_distance_max
         self.norm_pdos = norm_pdos
-        self.total_dos_norm_limits = total_dos_norm_limits
-        self.pdos_norm_limits = pdos_norm_limits
+        
 
+
+        self.gdf = GaussianDistance(dmin=gauss_distance_min, dmax=self.gauss_distance_max, step=gauss_distance_step)
         self.orbital_name_list = ["s", "py", "pz", "px", "dxy", "dyz", "dz2", "dxz", "dx2"]
         self.spin=Spin(1)
 
         with open("utilities/atom_features_one_hot.json", "r") as element_one_hot_features_file:
                     self.element_one_hot_features = json.load(element_one_hot_features_file)
-        with open("utilities/orbit_radius_fea.json", "r") as element_one_hot_features_file:
-                    self.orbit_radius_fea = json.load(element_one_hot_features_file)
+        with open("utilities/orbit_radius_fea_scaled.json", "r") as orbit_radius_fea_file:
+                    self.orbit_radius_fea = json.load(orbit_radius_fea_file)
         with open("utilities/n_electrons.json", "r") as n_electrons_file:
                     self.n_electrons_dict = json.load(n_electrons_file)
-        dmin=0
-        step=0.2
-        self.gdf = GaussianDistance(dmin=dmin, dmax=self.radius, step=step)
 
 
-    def get_normalization_coeficient(self, energy, density, e_min, e_max, complete_dos=None, orbital=False):
+
+    def _get_normalization_coefficient(self, energy, density, e_min, e_max, complete_dos=None, orbital=False):
         """
             normalize_total_dos function calculates normalization coefficient for Density of States
             ---------------------------------------------------------------------------------------
@@ -92,7 +111,7 @@ class CrystalGraphPDOS():
             if area == 0:
                 return 1
             else:
-                norm_coefficient = 2/area
+                norm_coefficient = 1/area
             return norm_coefficient
         else:
             n_electrons = 0
@@ -101,11 +120,14 @@ class CrystalGraphPDOS():
             norm_coefficient = n_electrons/area
             return norm_coefficient
 
-    def preproc_dos(self, energies, densities, extend_range=10, sigma=0.3, smear=True):
+    def _preproc_dos(self, energies, densities, extend_range=10, sigma=0.2, smear=True):
         """
-            preproc_dos function extends DOS energy window and applies broadening (smearing)
+            _preproc_dos function extends DOS energy window and applies broadening (smearing)
             --------------------------------------------------------------------------------
         """
+        if sigma == 0.0:
+            smear = False
+
         diff = [energies[i + 1] - energies[i]
                 for i in range(len(energies) - 1)]
         avgdiff = sum(diff) / len(diff)
@@ -127,7 +149,7 @@ class CrystalGraphPDOS():
         return energies_extend, densities_extend
 
 
-    def get_graph(self, crystal, material_id):
+    def _get_graph(self, crystal: Structure, material_id: str) -> Union[LongTensor, Tensor, Tensor, List, List]:
         """
             Generates crystal graph from cif pymatgen structure
             Input:
@@ -136,16 +158,17 @@ class CrystalGraphPDOS():
             Output:
                 - bond_index:                   Tensor of edge indices that encode conections in graph
                 - bond_attr:                    Tensor of edge features that 
+                - distances:                    Tensor of distances between atoms
                 - crystal_orbital_name_list:    List of orbital names (s, px, py, etc.) 
                 - crystal_orbital_index_list:   List of orbital indices corresponding to orbital types
-                - distances:                    Tensor of distances between atoms
         """
-        all_nbrs = crystal.get_all_neighbors(self.radius, include_index=True)
+        all_nbrs = crystal.get_all_neighbors(self.gauss_distance_max, include_index=True)
         all_nbrs = [sorted(nbrs, key=lambda x: x[1]) for nbrs in all_nbrs]
         bond_index = [[],[]]
         bond_attr = []
         crystal_orbital_name_list = []
         crystal_orbital_index_list = []
+  
         for i, nbrs in enumerate(all_nbrs):
                 # Add orbital names and indices for particular site i to lists for crystal data
                 crystal_orbital_name_list.append(self.orbital_name_list)
@@ -161,23 +184,22 @@ class CrystalGraphPDOS():
                         bond_attr.extend(np.asarray(list(map(lambda x: x[1], nbrs[:self.max_num_nbr]))))
 
         bond_index, bond_attr = np.array(bond_index), np.array(bond_attr)
-        distances = torch.unsqueeze(torch.Tensor(bond_attr), 1)
+        distances = torch.unsqueeze(Tensor(bond_attr), 1)
         bond_attr = self.gdf.expand(bond_attr)
-        bond_attr = torch.Tensor(bond_attr)
-        bond_index = torch.LongTensor(bond_index)
-        return bond_index, bond_attr, crystal_orbital_name_list, crystal_orbital_index_list, distances
+        bond_attr = Tensor(bond_attr)
+        bond_index = LongTensor(bond_index)
+        return bond_index, bond_attr, distances, crystal_orbital_name_list, crystal_orbital_index_list
 
 
-    def generate_node_features(self, material_file_name, crystal, crystal_orbital_name_list, crystal_orbital_index_list, efermi=None, complete_dos=None, total_dos_norm_coef=None, for_training=False):
+    def _get_node_features(self, crystal, crystal_orbital_name_list, crystal_orbital_index_list, efermi=None, complete_dos=None, total_dos_norm_coef=None, for_training=False):
         sites = []
         elements = []
         atom_fea = []
         target_pdos = []
+        target_pdos_cdf = []
         orbital_types = []
         orbital_max_density_list = []
 
-        if for_training:
-            target_total_density = np.zeros(self.grid)
         # Iterate over orbital energies for each site
         for k, site_orbitals in enumerate(crystal_orbital_index_list):
             if complete_dos is not None:
@@ -186,8 +208,9 @@ class CrystalGraphPDOS():
                 site = crystal.sites[k]
             site_one_hot_features = np.asarray(self.element_one_hot_features[str(crystal.sites[k].specie.number)])
             site_orbit_radius_features = np.asarray(self.orbit_radius_fea[str(crystal.sites[k].specie.number)])
-            #print(site_orbit_radius_features)
-            atom_fea.append(site_one_hot_features)
+            site_features = np.concatenate((site_one_hot_features, site_orbit_radius_features))
+            print(site_features.shape)
+            atom_fea.append(site_features)
             for i, _ in enumerate(site_orbitals):
                 orbital_types.append(crystal_orbital_name_list[k][i])
                 elements.append(str(crystal.sites[k].specie))
@@ -196,55 +219,66 @@ class CrystalGraphPDOS():
                 if for_training:
                     orbital = Orbital(crystal_orbital_index_list[k][i])
                     orbital_dos = complete_dos.get_site_orbital_dos(site, orbital)
-                    energies_ext, densities_ext = self.preproc_dos(orbital_dos.energies, orbital_dos.get_densities(spin=self.spin), sigma=self.sigma, extend_range=30, smear=False)
+                    energies_ext, densities_ext = self._preproc_dos(orbital_dos.energies, orbital_dos.get_densities(spin=self.spin), sigma=self.sigma, extend_range=30, smear=True)
+                    orbital_norm_coefficient = self._get_normalization_coefficient(energy=orbital_dos.energies, density=orbital_dos.get_densities(spin=self.spin), e_min=np.min(orbital_dos.energies), e_max=np.max(orbital_dos.energies), orbital=True)
+                    densities_ext = densities_ext*orbital_norm_coefficient
+                    #print(densities_ext)
+                    densities_ext_cdf = np.cumsum(densities_ext) * np.mean(np.diff(energies_ext))
+                    # plt.plot(energies_ext, densities_ext)
+                    # plt.plot(energies_ext, densities_ext_cdf)
+                    # plt.plot(energies_ext[1:], np.diff(densities_ext_cdf)/np.mean(np.diff(energies_ext)), "g--")
+                    # plt.show()
                     interp_funtion = interp1d(energies_ext, densities_ext)
+                    interp_funtion_cdf = interp1d(energies_ext, densities_ext_cdf)
                     shifted_energies = np.linspace(self.bound_low+efermi, self.bound_high+efermi, self.grid)
                     target_orbital_density = interp_funtion(shifted_energies)
-
-                    # Remove densities with sharp peaks at high energies
-                    #if np.max(target_orbital_density) > 4 and np.argmax(target_orbital_density) > 128: 
-                    #        return None
-                            #    with open("orbital_density_above_2.txt", "a") as file_object:
-                        #        file_object.write(material_file_name + "\n")
-                        #        return None
-                           #print(np.argmax(target_orbital_density_norm))
-        
-                            #warnings.warn("\n Structure {} has maximum orbital density > 2".format(material_file_name), stacklevel=2)
-                              
-                            # plt.plot(shifted_energies, target_orbital_density_norm, label=material_file_name)
-                            # plt.legend()
-                            # plt.show()
+                    target_orbital_density_cdf = interp_funtion_cdf(shifted_energies)
+                    # plt.plot(energies_ext, densities_ext_cdf)
+                    # plt.plot(shifted_energies, target_orbital_density_cdf)
+                    # plt.plot(energies_ext, densities_ext)
+                    # plt.show()
+                    # plt.plot(shifted_energies, target_orbital_density_cdf, "--")
+                    # plt.plot(shifted_energies[:len(shifted_energies)-1], np.diff(target_orbital_density_cdf)/np.mean(np.diff(shifted_energies)), "--")
+                    # plt.xlabel("Energy, eV")
+                    # plt.ylabel("PDOS, states/eV")
+                    # plt.show()
+                    e_diff = np.mean(np.diff(shifted_energies))  
  
                     if self.norm_pdos:
-                        orbital_norm_coefficient = self.get_normalization_coeficient(energy=orbital_dos.energies, density=orbital_dos.get_densities(spin=self.spin), e_min=np.min(orbital_dos.energies), e_max=np.max(orbital_dos.energies), orbital=True)
+                        orbital_norm_coefficient = self._get_normalization_coefficient(energy=orbital_dos.energies, density=orbital_dos.get_densities(spin=self.spin), e_min=np.min(orbital_dos.energies), e_max=np.max(orbital_dos.energies), orbital=True)
                         target_orbital_density_norm = orbital_norm_coefficient * target_orbital_density
-                        target_total_density += target_orbital_density_norm
                         target_pdos.append(target_orbital_density_norm)
                         orbital_max_density_list.append(np.max(target_orbital_density_norm))
                     else:
                         target_orbital_density = total_dos_norm_coef * target_orbital_density
-                        target_total_density += target_orbital_density
                         target_pdos.append(target_orbital_density)
+                        target_pdos_cdf.append(target_orbital_density_cdf)
+                        
                         orbital_max_density_list.append(np.max(target_orbital_density))
 
         atom_fea = np.array(atom_fea)
-        atom_fea = torch.Tensor(atom_fea)
+        atom_fea = Tensor(atom_fea)
 
         if for_training:
             target_pdos = np.array(target_pdos)
-            target_pdos = torch.Tensor(target_pdos)
+            target_pdos = Tensor(target_pdos)
+            target_pdos_cdf = np.array(target_pdos_cdf)
+            target_pdos_cdf = Tensor(target_pdos_cdf)
             target_dos = torch.sum(target_pdos, dim=0)
             target_dos = torch.unsqueeze(target_dos, 0)
-            return atom_fea, target_dos, target_pdos, elements, sites, orbital_types, orbital_max_density_list
+            target_dos_cdf = torch.sum(target_pdos_cdf, dim=0)
+            target_dos_cdf = torch.unsqueeze(target_dos_cdf, 0)
+            e_diff = Tensor([e_diff])
+            return atom_fea, target_dos, target_pdos, target_dos_cdf, target_pdos_cdf, elements, sites, orbital_types, orbital_max_density_list, e_diff
 
         return atom_fea, elements, sites, orbital_types
 
 
-    def get_crystal_pdos_graph(self, material_file):
+    def get_crystal_pdos_graph(self, material_file: str) -> Data:
         """
             This method loads material cif and DOS files, asserts that material fits the dataset constraints, and returns a crystal graph
             Input: 
-                - material_file: material cif file
+                - material_file: path to material's cif file
             Output:
                 - crystal_graph: Pytorch Geometric Data structure containing material crystal graph with node features, 
                                  edge features, and PDOS as target for training 
@@ -263,26 +297,30 @@ class CrystalGraphPDOS():
             return None
 
         with open(os.path.join(self.dos_dir, material_file_name+"_dos.json"), "r") as material_dos_file:
-                    material_dos_file = json.load(material_dos_file)
-        # Check if material has spin non-polarized PDOS calculation
+            material_dos_file = json.load(material_dos_file)
+
+        # Check if material has spin polarized PDOS calculation
         if len(material_dos_file["densities"]) > 1: 
             warnings.warn("Structure {} contains spin-polarized PDOS calculation and will be skipped".format(material_file_name), stacklevel=2)
             return None
 
         # Check that material structure in cif file has same number of atoms as structure in complete_dos
         complete_dos = CompleteDos.from_dict(material_dos_file)
-        if len(crystal) != len(complete_dos.structure):
+        if not crystal.matches(complete_dos.structure):
             warnings.warn("Structure {} does not match structure in PDOS file and will be skipped".format(material_file_name), stacklevel=2)
             return None
 
         # Check that material PDOS does not contain f orbitals
-        spd_dos = complete_dos.get_spd_dos()
-        if len(spd_dos.keys()) > 3:
-            warnings.warn("Structure {} contains f orbitals in PDOS file and will be skipped".format(material_file_name), stacklevel=2)
-            return None
+        # spd_dos = complete_dos.get_spd_dos()
+        # if len(spd_dos.keys()) > 3:
+        #     warnings.warn("Structure {} contains f orbitals in PDOS file and will be skipped".format(material_file_name), stacklevel=2)
+        #     return None
         
-        # Check DOS normalization 
-        norm_coefficient = self.get_normalization_coeficient(energy=complete_dos.energies, density=complete_dos.get_densities(spin=self.spin), e_min=np.min(complete_dos.energies), e_max=np.max(complete_dos.efermi), complete_dos=complete_dos)
+        if self.norm_dos:
+            # Check DOS normalization 
+            norm_coefficient = self._get_normalization_coefficient(energy=complete_dos.energies, density=complete_dos.get_densities(spin=self.spin), e_min=np.min(complete_dos.energies), e_max=np.max(complete_dos.efermi), complete_dos=complete_dos)
+        else:
+            norm_coefficient = 1.0
      #   if norm_coefficient > 1 + self.total_dos_norm_limits or norm_coefficient < 1 - self.total_dos_norm_limits:
      #       warnings.warn("Structure {} might have incorrect DOS normalization and will be skipped".format(material_file_name), stacklevel=2)
      #       return None
@@ -293,40 +331,57 @@ class CrystalGraphPDOS():
         #         orbital = Orbital(orbital_n)
         #         orbital_dos = complete_dos.get_site_orbital_dos(site, orbital)  
         #         orbital_density = norm_coefficient * orbital_dos.get_densities(spin=self.spin)
-        #         orbital_norm_coefficient = self.get_normalization_coeficient(energy=orbital_dos.energies, density=orbital_density, e_min=np.min(orbital_dos.energies), e_max=np.max(orbital_dos.energies), orbital=True)
+        #         orbital_norm_coefficient = self._get_normalization_coefficient(energy=orbital_dos.energies, density=orbital_density, e_min=np.min(orbital_dos.energies), e_max=np.max(orbital_dos.energies), orbital=True)
         #         orbital_area = 2/orbital_norm_coefficient
         #         if orbital_area > 2 + self.pdos_norm_limits or orbital_area < 2 - self.pdos_norm_limits:
         #             warnings.warn("Structure {} might have incorrect PDOS normalization and will be skipped".format(material_file_name), stacklevel=2)
         #             return None
+        
+        # Get crystal graph
+        graph_parameters = self._get_graph(crystal, material_file_name)
 
-        graph_parameters = self.get_graph(crystal, material_file_name)
-        if graph_parameters is not None:
-            bond_index, bond_attr, crystal_orbital_name_list, crystal_orbital_index_list, distances = graph_parameters
-        else:
+        if graph_parameters is None:
             return None
-        node_features = self.generate_node_features(material_file_name, crystal, crystal_orbital_name_list, crystal_orbital_index_list, efermi=material_dos_file["efermi"], complete_dos=complete_dos, total_dos_norm_coef=norm_coefficient, for_training=True)
-        if node_features is not None:
-            atom_fea, target_dos, target_pdos, elements, sites, orbital_types, orbital_max_density_list = node_features
-        else: 
+        
+        bond_index, bond_attr, distances, crystal_orbital_name_list, crystal_orbital_index_list = graph_parameters
+            
+        # Get features and targets
+        node_features = self._get_node_features(crystal, crystal_orbital_name_list, crystal_orbital_index_list, efermi=material_dos_file["efermi"], complete_dos=complete_dos, total_dos_norm_coef=norm_coefficient, for_training=True)
+        if node_features is None:
             return None
-        crystal_graph = Data(x=atom_fea, edge_index=bond_index, edge_attr=bond_attr, dos=target_dos, pdos=target_pdos, material_id=material_file_name, elements=elements, sites=sites, orbital_types=orbital_types, distances=distances, orbital_max_density=np.max(orbital_max_density_list))
+        
+        atom_fea, target_dos, target_pdos, target_dos_cdf, target_pdos_cdf, elements, sites, orbital_types, orbital_max_density_list, e_diff = node_features
+
+        crystal_graph = Data(x=atom_fea, edge_index=bond_index, edge_attr=bond_attr, dos=target_dos, pdos=target_pdos, dos_cdf=target_dos_cdf, pdos_cdf=target_pdos_cdf, material_id=material_file_name, elements=elements, sites=sites, orbital_types=orbital_types, distances=distances, orbital_max_density=np.max(orbital_max_density_list), e_diff=e_diff)
         return crystal_graph
 
 
-    def get_crystal_pdos_graph_pred(self, material_file):
+    def get_crystal_pdos_graph_pred(self, material_file: str) -> Data:
         """
             Constructs and returns crystal graph without target PDOS values
             Input:
                 - material_file: cif file of material
+                - structure:     pymatgen structure (if provided, will be used instead of cif file) 
             Output:
                 - crystal_graph: Pytorch Geometric Data structure containing material crystal graph with node features and  
                                  edge features for prediction when target PDOS values are unknown
         """
-        file_name = os.path.split(material_file)[1].split(".")[0]
+
+        material_file_name = os.path.split(material_file)[1].split(".")[0]
         crystal = Structure.from_file(material_file)
-        bond_index, bond_attr, crystal_orbital_name_list, crystal_orbital_index_list = self.get_crystal_graph(crystal, file_name)
-        node_features = self.generate_node_features(crystal, crystal_orbital_name_list, crystal_orbital_index_list, for_training=False)
+        graph_parameters = self._get_graph(crystal, material_file_name)
+        if graph_parameters is None:
+            return None 
+        bond_index, bond_attr, distances, crystal_orbital_name_list, crystal_orbital_index_list = graph_parameters
+        node_features = self._get_node_features(crystal, crystal_orbital_name_list, crystal_orbital_index_list, for_training=False)
         if node_features is not None:
             atom_fea, elements, sites, orbital_types = node_features
-        crystal_graph = Data(x=atom_fea, edge_index=bond_index, edge_attr=bond_attr, material_id=file_name, elements=elements, sites=sites, orbital_types=orbital_types)
+        
+        n_atoms = int(atom_fea.shape[0])
+        atoms = []
+        for i in range(n_atoms):
+            atoms.extend([i]*self.n_orbitals)
+        atoms_batch = LongTensor(np.array(atoms))
+
+        crystal_graph = Data(x=atom_fea, edge_index=bond_index, edge_attr=bond_attr, material_id=material_file_name, elements=elements, sites=sites, orbital_types=orbital_types, atoms_batch=atoms_batch)
         return crystal_graph
