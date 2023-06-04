@@ -241,16 +241,15 @@ class CrystalGraphPDOS():
                     orbital_dos = complete_dos.get_site_orbital_dos(site, orbital)
                     energies_ext, densities_ext = self._preproc_dos(orbital_dos.energies, orbital_dos.get_densities(spin=self.spin), sigma=self.sigma, extend_range=30, smear=True)
                     orbital_norm_coefficient = self._get_normalization_coefficient(energy=orbital_dos.energies, density=orbital_dos.get_densities(spin=self.spin), e_min=np.min(orbital_dos.energies), e_max=np.max(orbital_dos.energies), orbital=True)
+
                     densities_ext = densities_ext*orbital_norm_coefficient
-                    #print(densities_ext)
                     densities_ext_cdf = np.cumsum(densities_ext) * np.mean(np.diff(energies_ext))
-                    # plt.plot(energies_ext, densities_ext)
-                    # plt.plot(energies_ext, densities_ext_cdf)
-                    # plt.plot(energies_ext[1:], np.diff(densities_ext_cdf)/np.mean(np.diff(energies_ext)), "g--")
-                    # plt.show()
+
                     interp_funtion = interp1d(energies_ext, densities_ext)
                     interp_funtion_cdf = interp1d(energies_ext, densities_ext_cdf)
                     shifted_energies = np.linspace(self.bound_low+efermi, self.bound_high+efermi, self.grid)
+                    e_diff = np.mean(np.diff(shifted_energies)) 
+
                     target_orbital_density = interp_funtion(shifted_energies)
                     target_orbital_density_cdf = interp_funtion_cdf(shifted_energies)
                     # plt.plot(energies_ext, densities_ext_cdf)
@@ -261,20 +260,12 @@ class CrystalGraphPDOS():
                     # plt.plot(shifted_energies[:len(shifted_energies)-1], np.diff(target_orbital_density_cdf)/np.mean(np.diff(shifted_energies)), "--")
                     # plt.xlabel("Energy, eV")
                     # plt.ylabel("PDOS, states/eV")
-                    # plt.show()
-                    e_diff = np.mean(np.diff(shifted_energies))  
- 
-                    if self.norm_pdos:
-                        orbital_norm_coefficient = self._get_normalization_coefficient(energy=orbital_dos.energies, density=orbital_dos.get_densities(spin=self.spin), e_min=np.min(orbital_dos.energies), e_max=np.max(orbital_dos.energies), orbital=True)
-                        target_orbital_density_norm = orbital_norm_coefficient * target_orbital_density
-                        target_pdos.append(target_orbital_density_norm)
-                        orbital_max_density_list.append(np.max(target_orbital_density_norm))
-                    else:
-                        target_orbital_density = total_dos_norm_coef * target_orbital_density
-                        target_pdos.append(target_orbital_density)
-                        target_pdos_cdf.append(target_orbital_density_cdf)
-                        
-                        orbital_max_density_list.append(np.max(target_orbital_density))
+                    # plt.show() 
+
+                    target_orbital_density = total_dos_norm_coef * target_orbital_density
+                    target_pdos.append(target_orbital_density)
+                    target_pdos_cdf.append(target_orbital_density_cdf)
+                    orbital_max_density_list.append(np.max(target_orbital_density))
 
         atom_fea = np.array(atom_fea)
         atom_fea = Tensor(atom_fea)
@@ -320,7 +311,6 @@ class CrystalGraphPDOS():
             material_dos_file = json.load(material_dos_file)
 
         # Check if material has spin polarized PDOS calculation
-        print((material_dos_file["densities"]))
         if len(material_dos_file["densities"]) > 1: 
             warnings.warn("Structure {} contains spin-polarized PDOS calculation and will be skipped".format(material_file_name), stacklevel=2)
             return None

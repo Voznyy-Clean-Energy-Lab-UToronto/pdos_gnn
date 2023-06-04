@@ -50,8 +50,8 @@ def run_cross_validation(config: dict, args, save_path: str):
     model = ProDosNet(orig_atom_fea_len=dataset[0].x.shape[1], nbr_fea_len=dataset[0].edge_attr.shape[1], n_conv=config["n_conv"], use_mlp=args.use_mlp, use_cdf=args.use_cdf)
     if args.cuda:
         device = torch.device("cuda")
-        model = nn.DataParallel(model)
         model.to(device)
+
     metric = nn.MSELoss()
     if config["weight_decay"] == 0.0:
         optimizer = optim.Adam(model.parameters())
@@ -63,17 +63,6 @@ def run_cross_validation(config: dict, args, save_path: str):
 
     print("------------------------ Training Model ------------------------ \n")
     for fold, (train_ids, val_ids) in enumerate(splits.split(np.arange(len(dataset)))):
-        print("---------------------------- Fold {} ----------------------------".format(fold+1))
-        
-        initial_model = torch.load('test_outputs/%s/model_init.pth.tar'%save_path, map_location=torch.device('cpu'))
-
-        model.load_state_dict(initial_model['state_dict'])
-        optimizer.load_state_dict(initial_model['optimizer'])
-        if args.cuda:
-            device = torch.device("cuda")
-            model.to(device)
-
-        dataset_name = os.path.basename(os.path.normpath(args.data_file))
 
         wandb.init(
             reinit=True,
@@ -86,6 +75,16 @@ def run_cross_validation(config: dict, args, save_path: str):
             # track hyperparameters and run metadata
             config = args
         )
+
+        print("---------------------------- Fold {} ----------------------------".format(fold+1))
+        
+        initial_model = torch.load('test_outputs/%s/model_init.pth.tar'%save_path, map_location=torch.device('cpu'))
+        model.load_state_dict(initial_model['state_dict'])
+        optimizer.load_state_dict(initial_model['optimizer'])
+
+        if args.cuda:
+            device = torch.device("cuda")
+            model.to(device)
 
         val_loss_list = []
         train_loss_list = []
@@ -223,7 +222,7 @@ def run_test(args, save_path, test_loader, model):
             device = torch.device("cuda")
             model.to(device)
     test_loss, test_pdos_rmse, test_cdf_pdos_rmse = validation(
-                model, metric, fold=None, save_path=save_path, validation_loader=test_loader, train_on_dos=args.train_on_dos, train_on_atomic_dos=args.train_on_atomic_dos, save_output=True, save_dos=args.save_dos, save_pdos=args.save_pdos, use_cuda=args.cuda, use_cdf=args.use_cdf, test=True)
+                model, metric, epoch=0, fold=None, save_path=save_path, validation_loader=test_loader, train_on_dos=args.train_on_dos, train_on_atomic_dos=args.train_on_atomic_dos, save_output=True, save_dos=args.save_dos, save_pdos=args.save_pdos, use_cuda=args.cuda, use_cdf=args.use_cdf, test=True)
     error_type_list = ["Test loss", "Test PDOS RMSE", "Test CDF PDOS RMSE"]
     errors = [test_loss, test_pdos_rmse, test_cdf_pdos_rmse]
     results_dict =  {"Error type": error_type_list, "Mean errors": errors}
@@ -261,7 +260,7 @@ def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, tra
 
             target = data.pdos_cdf
             output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-            loss = metric(output_pdos, target)
+            loss = metric(torch.flatten(output_pdos), torch.flatten(target))
             loss_item = loss.item()
             cdf_mse = loss.item()
             output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
@@ -368,10 +367,7 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
             target_pdos_cpu = data.pdos
             target_dos_cpu_cdf = data.dos_cdf
             target_pdos_cpu_cdf = data.pdos_cdf
-        
-        save_selected = True
-        if save_selected:
-            target_dos_cpu = data.dos
+
                 
         if use_cuda:
             device = torch.device('cuda')
@@ -400,7 +396,7 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
                     
                 target = data.pdos_cdf
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-                loss = metric(output_pdos, target)
+                loss = metric(torch.flatten(output_pdos), torch.flatten(target))
                 loss_item = loss.item()
                 cdf_mse = loss.item()
                 output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
@@ -420,26 +416,13 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
                 loss_item = loss.item()
                 pdos_mse = loss.item()
                 cdf_mse = metric(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
-
-        wandb.log({"val_loss": loss_item, "val_pdos_mse": pdos_mse, "val_cdf_mse": cdf_mse, "epoch": epoch, "batch": batch_idx})
+        
+        if not test:
+            wandb.log({"val_loss": loss_item, "val_pdos_mse": pdos_mse, "val_cdf_mse": cdf_mse, "epoch": epoch, "batch": batch_idx})
         
         running_loss += loss_item
         running_pdos_rmse += pdos_mse
         running_cdf_pdos_rmse += cdf_mse
-
-        save_id_list = ['mp-570777', 'mp-569531', 'mp-1027646', 'mp-1223654', 'mp-1206435']
-        if save_selected:
-            if not os.path.exists('test_outputs/%s/' % save_path + "saved_selected"):
-                os.makedirs('test_outputs/%s/' % save_path + "saved_selected")
-            batch_ids = data.material_id
-
-            _ , save_batch_idx, _ =np.intersect1d(batch_ids, save_id_list, return_indices=True)
-            for idx in save_batch_idx:
-                dos_to_save = torch.diff(output_dos, dim=1)/e_diff
-    
-                np.save('test_outputs/%s/' % save_path + "saved_selected/" + f'{batch_ids[idx]}_predicted_fold_{fold}_epoch_{epoch}.npy', dos_to_save[idx].cpu().detach().numpy())
-                np.save('test_outputs/%s/' % save_path + "saved_selected/" + f'{batch_ids[idx]}_target_fold_{fold}_epoch_{epoch}.npy', target_dos_cpu[idx].cpu().detach().numpy())
-
         
         if save_output:
             if use_cdf:

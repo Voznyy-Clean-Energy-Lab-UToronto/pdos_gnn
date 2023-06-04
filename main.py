@@ -2,6 +2,7 @@ import os
 import json
 import tqdm
 import torch
+import tarfile
 import random
 import argparse
 import numpy as np
@@ -26,8 +27,6 @@ def main(args):
     if not os.path.exists('test_outputs/%s' % save_path):
         os.makedirs('test_outputs/%s' % save_path)
 
-    print(f"\t------------------------------------------------\n\t* Selected task: {args.task}")
-
     # If task is preprocess, run data preprocessing 
     if args.task == "preprocess":
         assert args.preprocess_ids is not None, "Please provide a csv file with list of material ids for preprocessing."
@@ -44,6 +43,9 @@ def main(args):
             args.save_data_dir = 'processed_data'
         else:
             assert os.path.exists(args.save_data_dir), "Provided save_data_dir path does not exist"
+        
+        if not os.path.exists(f'{args.save_data_dir}/processed_data'):
+            os.makedirs(f'{args.save_data_dir}/processed_data')
 
         preprocess_ids = pd.read_csv(args.preprocess_ids)
 
@@ -62,10 +64,13 @@ def main(args):
             cif_id = preprocess_ids.iloc[index, 0]
             graph = graph_gen.get_crystal_pdos_graph(os.path.join(args.cif_dir, f"{cif_id}.cif"))
             if graph is not None:
-                torch.save(graph, os.path.join(args.save_data_dir, f'{cif_id}_crystal_graph_pdos.pt'))
+                torch.save(graph, os.path.join(args.save_data_dir, f'processed_data/{cif_id}_crystal_graph_pdos.pt'))
                 successful_ids.append(cif_id)
             else:
                 failed_ids.append(cif_id)
+
+        with tarfile.open(f"{args.save_data_dir}/processed_data.tar.gz", "w:gz") as tar:
+            tar.add(f"{args.save_data_dir}/processed_data", arcname=os.path.basename(f"{args.save_data_dir}/processed_data"))
 
         n_failed = len(failed_ids)
         n_successful = len(successful_ids)
@@ -105,13 +110,12 @@ def main(args):
         assert args.model is not None, "Please provide path to pretrained model"
         test_dataset = MaterialData(data_file=args.data_file, id_file=args.test_ids)
         test_loader = DataLoader(test_dataset, batch_size=1)
-        test_ids_file_name = os.path.split(args.test_ids)[1]
+        test_ids_file_name = os.path.basename(args.test_ids)
         
         model = ProDosNet(orig_atom_fea_len=test_dataset[0].x.shape[1], nbr_fea_len=test_dataset[0].edge_attr.shape[1], n_conv=config["n_conv"], use_mlp=args.use_mlp)
-        model = nn.DataParallel(model)
+
         if args.cuda:
             device = torch.device("cuda")
-            model = nn.DataParallel(model)
             model.to(device)
         print(f"------------ Running Test on {test_ids_file_name} ------------- \n")
         run_test(args, save_path, test_loader, model)
@@ -158,8 +162,8 @@ if __name__ == '__main__':
     parser.add_argument("--name", default="ProDosNet_experiment",
                         help="Provide experiment name. Default: ProDosNet_experiment")
 
-    parser.add_argument("--model_name", default="crystal_model_spd",
-                        help="Provide model name. Default: crystal_model_spd")
+    parser.add_argument("--model_name", default="crystal_model",
+                        help="Provide model name. Default: crystal_model")
 
     parser.add_argument("--task", choices=['preprocess', 'cross_val', 'test', 'predict'], default="train_cv",
                         help="Choose task from available options ")
