@@ -20,7 +20,7 @@ class MaterialData(Dataset):
         self.ids = pd.read_csv(self.id_file).iloc[:, 0].tolist()
  
         assert os.path.exists(self.data_file),  f'{self.data_file} does not exist!'
-        self.graphs_data = tarfile.open(self.data_file, "r:gz")
+        self.graphs_data = tarfile.open(self.data_file)
 
 
     def __len__(self):
@@ -31,7 +31,7 @@ class MaterialData(Dataset):
     @functools.lru_cache(maxsize=None)
     def __getitem__(self, idx):
         cif_id = self.ids[idx]
-        material_graph = torch.load(self.graphs_data.extractfile(os.path.basename(self.data_file).removesuffix('.tar.gz')+f'/{cif_id}_crystal_graph_pdos.pt'))
+        material_graph = torch.load(self.graphs_data.extractfile(os.path.basename(self.data_file).removesuffix('.tar')+f'/{cif_id}_crystal_graph_pdos.pt'))
    
         target_pdos = material_graph.pdos
 
