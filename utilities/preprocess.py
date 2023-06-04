@@ -44,6 +44,7 @@ class CrystalGraphPDOS():
                  gauss_distance_min: float = 0.0,
                  gauss_distance_max: float = 8.0,
                  gauss_distance_step: float = 0.2,
+                 norm_dos: bool = False,
                  norm_pdos: bool = False
                  ):
         """
@@ -59,7 +60,8 @@ class CrystalGraphPDOS():
             - grid:         Number of density grid points
             - max_element:  Maximum element number in the crystal
             - n_orbitals:   Number of orbitals per atom (default=9; 1s, 3p, 5d orbitals)
-            - norm_pdos:    Normalize PDOS if True
+            - norm_dos:     Normalize total DOS if True
+            - norm_pdos:    Normalize orbital PDOS if True
         """
 
         self.dos_dir = dos_dir
@@ -73,7 +75,26 @@ class CrystalGraphPDOS():
         self.max_element = max_element
         self.n_orbitals = n_orbitals
         self.gauss_distance_max = gauss_distance_max
+        self.norm_dos = norm_dos
         self.norm_pdos = norm_pdos
+
+        print(
+        f"""\t------------------------------------------------
+        |        Data Preprocessing Parameters         |
+        ------------------------------------------------
+            - dos_dir:      {self.dos_dir}
+            - cif_dir:      {self.cif_dir}
+            - radius:       {self.radius}
+            - max_num_nbr:  {self.max_num_nbr}
+            - sigma:        {self.sigma}
+            - bound_low:    {self.bound_low}
+            - bound_high:   {self.bound_high}
+            - grid:         {self.grid}
+            - max_element:  {self.max_element}
+            - n_orbitals:   {self.n_orbitals}
+            - norm_pdos:    {self.norm_pdos}
+        ------------------------------------------------
+        """)
         
 
 
@@ -209,7 +230,6 @@ class CrystalGraphPDOS():
             site_one_hot_features = np.asarray(self.element_one_hot_features[str(crystal.sites[k].specie.number)])
             site_orbit_radius_features = np.asarray(self.orbit_radius_fea[str(crystal.sites[k].specie.number)])
             site_features = np.concatenate((site_one_hot_features, site_orbit_radius_features))
-            print(site_features.shape)
             atom_fea.append(site_features)
             for i, _ in enumerate(site_orbitals):
                 orbital_types.append(crystal_orbital_name_list[k][i])
@@ -300,6 +320,7 @@ class CrystalGraphPDOS():
             material_dos_file = json.load(material_dos_file)
 
         # Check if material has spin polarized PDOS calculation
+        print((material_dos_file["densities"]))
         if len(material_dos_file["densities"]) > 1: 
             warnings.warn("Structure {} contains spin-polarized PDOS calculation and will be skipped".format(material_file_name), stacklevel=2)
             return None

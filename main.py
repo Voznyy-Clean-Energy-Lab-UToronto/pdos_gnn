@@ -26,6 +26,8 @@ def main(args):
     if not os.path.exists('test_outputs/%s' % save_path):
         os.makedirs('test_outputs/%s' % save_path)
 
+    print(f"\t------------------------------------------------\n\t* Selected task: {args.task}")
+
     # If task is preprocess, run data preprocessing 
     if args.task == "preprocess":
         assert args.preprocess_ids is not None, "Please provide a csv file with list of material ids for preprocessing."
@@ -43,7 +45,7 @@ def main(args):
         else:
             assert os.path.exists(args.save_data_dir), "Provided save_data_dir path does not exist"
 
-        preprocess_ids = pd.read_csv(args.preprocess_ids, header=None)
+        preprocess_ids = pd.read_csv(args.preprocess_ids)
 
         graph_gen = CrystalGraphPDOS(dos_dir=args.dos_dir,
                                      cif_dir=args.cif_dir, 
@@ -51,7 +53,8 @@ def main(args):
                                      max_element=args.max_element,
                                      radius=args.radius,
                                      sigma=args.sigma, 
-                                     grid=args.grid)
+                                     grid=args.grid,
+                                     norm_pdos = args.norm_pdos)
                                      
         failed_ids = []
         successful_ids = []
@@ -249,6 +252,9 @@ if __name__ == '__main__':
     
     parser.add_argument("--scale", default=False, action='store_true',
                         help="If True, rescales bond distances to [0, 1] range. Default: False")
+    
+    parser.add_argument("--norm_pdos", default=False, action='store_true',
+                        help="If True, normalize orbital PDOS to area = 1. Default: False")
 
     args = parser.parse_args()
     main(args)
