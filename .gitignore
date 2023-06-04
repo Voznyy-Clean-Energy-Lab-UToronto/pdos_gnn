@@ -162,6 +162,7 @@ cython_debug/
 *.err
 *.out
 *.core
+core.*
 .DS_Store
 test_outputs/
 processed_data/
