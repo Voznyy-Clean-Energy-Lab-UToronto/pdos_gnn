@@ -69,8 +69,10 @@ def main(args):
             else:
                 failed_ids.append(cif_id)
 
+        print("-------------- Compressing processed data into tar.gz file . . . --------------- \n")
         with tarfile.open(f"{args.save_data_dir}/processed_data.tar.gz", "w:gz") as tar:
             tar.add(f"{args.save_data_dir}/processed_data", arcname=os.path.basename(f"{args.save_data_dir}/processed_data"))
+        print(" Done compressing! \n ")
 
         n_failed = len(failed_ids)
         n_successful = len(successful_ids)
