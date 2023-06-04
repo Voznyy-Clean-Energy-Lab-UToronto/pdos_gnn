@@ -64,17 +64,14 @@ class ProDosNet(nn.Module):
         self.conv_to_fc_sigmoid = nn.Sigmoid()
         self.conv_to_fc = nn.Linear(orig_atom_fea_len, n_orbitals*grid)
 
-        self.fc_out_1 = nn.Linear(orig_atom_fea_len, 256)
-        #self.fc_out = nn.Linear(h_fea_len, n_orbitals*grid)    
+        self.fc_out_1 = nn.Linear(orig_atom_fea_len, 256) 
         self.fc_out_2 = nn.Linear(256, 512)
         self.fc_out_3 = nn.Linear(512, n_orbitals*grid)
         self.dropout_1 = nn.Dropout(p=0.2)
         self.dropout_2 = nn.Dropout(p=0.2)
-        self.dropout_3 = nn.Dropout(p=0.2)
 
 
-    def forward(self, node_fea, edge_index, edge_attr, batch, atoms_batch):
-        
+    def forward(self, node_fea, edge_index, edge_attr, batch, atoms_batch): 
         node_fea = self.embedding(node_fea)
         node_fea = self.embed_softplus(node_fea)
 
@@ -87,17 +84,6 @@ class ProDosNet(nn.Module):
         node_fea = self.dropout_2(node_fea)
         pdos = self.conv_to_fc_sigmoid(self.fc_out_3(node_fea))
         
-      #  crys_fea = self.conv_to_fc_softplus(crys_fea)
-      #  crys_fea = self.dropout_1(crys_fea)
-      #  crys_fea = self.conv_to_fc_softplus(self.fc_out_1(crys_fea))
-      #  crys_fea = self.dropout_2(crys_fea)
-      #  crys_fea = self.conv_to_fc_softplus(self.fc_out_2(crys_fea))
-      #  crys_fea = self.dropout_3(crys_fea)
-        #pdos = self.conv_to_fc_softplus(self.fc_out_3(crys_fea))
-
-        # if hasattr(self, 'fcs') and hasattr(self, 'softpluses'):
-        #     for fc, softplus in zip(self.fcs, self.softpluses):
-        #         crys_fea = softplus(fc(crys_fea))
         dos = gsp(pdos, batch)
         dos = torch.split(dos, self.grid, 1)
         dos = torch.stack(dos, 1)
