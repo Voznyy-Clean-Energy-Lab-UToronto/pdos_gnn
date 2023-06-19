@@ -47,44 +47,45 @@ def run_cross_validation(config: dict, args, save_path: str):
     splits = KFold(n_splits=args.kfold, shuffle=True, random_state=42)
 
     print("---------------------- Initializing Model ---------------------- \n")
-    model = ProDosNet(orig_atom_fea_len=dataset[0].x.shape[1], nbr_fea_len=dataset[0].edge_attr.shape[1], n_conv=config["n_conv"], use_mlp=args.use_mlp, use_cdf=args.use_cdf)
-    if args.cuda:
-        device = torch.device("cuda")
-        model.to(device)
 
-    metric = nn.MSELoss()
-    if config["weight_decay"] == 0.0:
-        optimizer = optim.Adam(model.parameters())
-    else:
-        optimizer = optim.AdamW(model.parameters(), weight_decay=config["weight_decay"])
-
-    model_state = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
-    save_model(model_state, epoch=0, save_path=save_path, init=True)
+    #model_state = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
+    #save_model(model_state, epoch=0, save_path=save_path, init=True)
 
     print("------------------------ Training Model ------------------------ \n")
     for fold, (train_ids, val_ids) in enumerate(splits.split(np.arange(len(dataset)))):
 
-        wandb.init(
-            reinit=True,
-            # set the wandb project where this run will be logged
-            project = "PDOS_ML",
-            name = f"{args.model_name}/{args.name}/fold-{fold}",
-            group = f"{args.model_name}/{args.name}",
-            save_code = False,
-            
-            # track hyperparameters and run metadata
-            config = args
-        )
-
-        print("---------------------------- Fold {} ----------------------------".format(fold+1))
-        
-        initial_model = torch.load('test_outputs/%s/model_init.pth.tar'%save_path, map_location=torch.device('cpu'))
-        model.load_state_dict(initial_model['state_dict'])
-        optimizer.load_state_dict(initial_model['optimizer'])
-
+        model = ProDosNet(orig_atom_fea_len=dataset[0].x.shape[1], nbr_fea_len=dataset[0].edge_attr.shape[1], n_conv=config["n_conv"], use_mlp=args.use_mlp, use_cdf=args.use_cdf)
         if args.cuda:
             device = torch.device("cuda")
             model.to(device)
+
+        metric = nn.MSELoss()
+        if config["weight_decay"] == 0.0:
+            optimizer = optim.Adam(model.parameters())
+        else:
+            optimizer = optim.AdamW(model.parameters(), weight_decay=config["weight_decay"])
+
+        # wandb.init(
+        #     reinit=True,
+        #     # set the wandb project where this run will be logged
+        #     project = "PDOS_ML",
+        #     name = f"{args.model_name}/{args.name}/fold-{fold}",
+        #     group = f"{args.model_name}/{args.name}",
+        #     save_code = False,
+            
+        #     # track hyperparameters and run metadata
+        #     config = args
+        # )
+
+        print("---------------------------- Fold {} ----------------------------".format(fold+1))
+        
+        #initial_model = torch.load('test_outputs/%s/model_init.pth.tar'%save_path, map_location=torch.device('cpu'))
+        #model.load_state_dict(initial_model['state_dict'])
+        #optimizer.load_state_dict(initial_model['optimizer'])
+
+        #if args.cuda:
+        #    device = torch.device("cuda")
+        #    model.to(device)
 
         val_loss_list = []
         train_loss_list = []
@@ -122,7 +123,7 @@ def run_cross_validation(config: dict, args, save_path: str):
         else:
             scaler = None
 
-        wandb.watch(model, metric, log_freq=100, log='all')
+        #wandb.watch(model, metric, log_freq=100, log='all')
         
         # Train the model
         for epoch in range(1, args.epochs+1):
@@ -281,7 +282,7 @@ def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, tra
             pdos_mse = loss.item()
             cdf_mse = metric(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
 
-        wandb.log({"train_loss": loss_item, "train_pdos_mse": pdos_mse, "train_cdf_mse": cdf_mse, "epoch": epoch, "batch": batch_idx})
+        #wandb.log({"train_loss": loss_item, "train_pdos_mse": pdos_mse, "train_cdf_mse": cdf_mse, "epoch": epoch, "batch": batch_idx})
 
         running_loss += loss_item
         running_pdos_rmse += pdos_mse
@@ -417,8 +418,8 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
                 pdos_mse = loss.item()
                 cdf_mse = metric(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
         
-        if not test:
-            wandb.log({"val_loss": loss_item, "val_pdos_mse": pdos_mse, "val_cdf_mse": cdf_mse, "epoch": epoch, "batch": batch_idx})
+        #if not test:
+        #    wandb.log({"val_loss": loss_item, "val_pdos_mse": pdos_mse, "val_cdf_mse": cdf_mse, "epoch": epoch, "batch": batch_idx})
         
         running_loss += loss_item
         running_pdos_rmse += pdos_mse
