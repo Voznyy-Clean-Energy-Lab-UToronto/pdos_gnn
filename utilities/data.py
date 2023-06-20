@@ -24,6 +24,11 @@ class MaterialData(Dataset):
         self.graphs_data = tarfile.open(self.data_file)
         print(" Done!")
 
+        print(self.data_file)
+        print(os.path.basename(self.data_file))
+        print(self.data_file.split("/")[-1])
+        
+
     def __len__(self):
         length = len(self.ids)
         return length
@@ -32,6 +37,8 @@ class MaterialData(Dataset):
     @functools.lru_cache(maxsize=None)
     def __getitem__(self, idx):
         cif_id = self.ids[idx]
+
+
         material_graph = torch.load(self.graphs_data.extractfile(os.path.basename(self.data_file).removesuffix('.tar')+f'/{cif_id}_crystal_graph_pdos.pt'))
         #material_graph = torch.load(self.data_file+f"/{cif_id}_crystal_graph_pdos.pt")
         target_pdos = material_graph.pdos

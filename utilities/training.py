@@ -48,13 +48,15 @@ def run_cross_validation(config: dict, args, save_path: str):
 
     print("---------------------- Initializing Model ---------------------- \n")
 
-    #model_state = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
-    #save_model(model_state, epoch=0, save_path=save_path, init=True)
+    
+    # model_state = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
+    # save_model(model_state, epoch=0, save_path=save_path, init=True)
 
     print("------------------------ Training Model ------------------------ \n")
     for fold, (train_ids, val_ids) in enumerate(splits.split(np.arange(len(dataset)))):
 
         model = ProDosNet(orig_atom_fea_len=dataset[0].x.shape[1], nbr_fea_len=dataset[0].edge_attr.shape[1], n_conv=config["n_conv"], use_mlp=args.use_mlp, use_cdf=args.use_cdf)
+
         if args.cuda:
             device = torch.device("cuda")
             model.to(device)
@@ -79,11 +81,11 @@ def run_cross_validation(config: dict, args, save_path: str):
 
         print("---------------------------- Fold {} ----------------------------".format(fold+1))
         
-        #initial_model = torch.load('test_outputs/%s/model_init.pth.tar'%save_path, map_location=torch.device('cpu'))
-        #model.load_state_dict(initial_model['state_dict'])
-        #optimizer.load_state_dict(initial_model['optimizer'])
+        # initial_model = torch.load('test_outputs/%s/model_init.pth.tar'%save_path, map_location=torch.device('cpu'))
+        # model.load_state_dict(initial_model['state_dict'])
+        # optimizer.load_state_dict(initial_model['optimizer'])
 
-        #if args.cuda:
+        # if args.cuda:
         #    device = torch.device("cuda")
         #    model.to(device)
 
@@ -168,7 +170,7 @@ def run_cross_validation(config: dict, args, save_path: str):
             if args.plot_training and epoch % args.plot_interval == 0:
                 plot_training_curve(save_path, val_loss_list, train_loss_list, fold=fold+1)
             if epoch % args.model_save_interval==0:
-                model_state_best = {'epoch': epoch, 'state_dict': model.state_dict(), 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss,
+                model_state = {'epoch': epoch, 'state_dict': model.state_dict(), 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss,
                                     'best_val_pdos_rmse': best_val_pdos_rmse, 'best_train_pdos_rmse': best_train_pdos_rmse, 'best_val_cdf_pdos_rmse': best_val_cdf_pdos_rmse, 'best_train_cdf_pdos_rmse': best_train_cdf_pdos_rmse, 'optimizer': optimizer.state_dict(), 'args': vars(args)}
                 save_model(model_state, epoch, save_path, fold)
 
