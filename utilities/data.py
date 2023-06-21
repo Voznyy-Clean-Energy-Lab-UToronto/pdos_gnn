@@ -23,10 +23,6 @@ class MaterialData(Dataset):
         print(" Opening tar ...")
         self.graphs_data = tarfile.open(self.data_file)
         print(" Done!")
-
-        print(self.data_file)
-        print(os.path.basename(self.data_file))
-        print(self.data_file.split("/")[-1])
         
 
     def __len__(self):

@@ -6,6 +6,7 @@ import itertools
 import numpy as np
 import pandas as pd
 import torch.nn as nn
+from tqdm import tqdm
 import torch.optim as optim
 import matplotlib.pyplot as plt
 from utilities.utils import Scaler
@@ -115,7 +116,7 @@ def run_cross_validation(config: dict, args, save_path: str):
         val_mp_ids = []
         for data in validation_loader:
             val_mp_ids.extend(data.material_id)
-        val_mp_ids_df = pd.DataFrame({"train_ids": val_mp_ids})
+        val_mp_ids_df = pd.DataFrame({"val_ids": val_mp_ids})
         val_mp_ids_df.to_csv(f'test_outputs/{save_path}/val_ids_fold_{fold+1}.csv', index=False)
 
         # Create a Scaler for bond distances 
@@ -173,6 +174,7 @@ def run_cross_validation(config: dict, args, save_path: str):
                 model_state = {'epoch': epoch, 'state_dict': model.state_dict(), 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss,
                                     'best_val_pdos_rmse': best_val_pdos_rmse, 'best_train_pdos_rmse': best_train_pdos_rmse, 'best_val_cdf_pdos_rmse': best_val_cdf_pdos_rmse, 'best_train_cdf_pdos_rmse': best_train_cdf_pdos_rmse, 'optimizer': optimizer.state_dict(), 'args': vars(args)}
                 save_model(model_state, epoch, save_path, fold)
+                save_training_curves(fold+1, training_curve_list, training_curve_name_list, save_path)
 
         fold_val_loss_list.append(best_val_loss)
         fold_train_loss_list.append(best_train_loss)
@@ -362,7 +364,7 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
     running_cdf_pdos_rmse = 0.0
 
 
-    for batch_idx, data in enumerate(validation_loader):
+    for data in tqdm(validation_loader):
         e_diff = torch.mean(data.e_diff)
 
         if save_output:
