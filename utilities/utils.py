@@ -102,8 +102,8 @@ def save_cv_results(folds, error_type_list, cv_lists, mean_list, std_list, save_
         print(result_df.to_string(index=False))
 
 
-def print_output(epoch: int, train_pdos_rmse: float, val_pdos_rmse: float, train_cdf_pdos_rmse: float, val_cdf_pdos_rmse: float):
-    print("Epoch: {},   Training PDOS RMSE: {:.4f}, Val PDOS RMSE: {:.4f}, Trainin CDF PDOS RMSE: {:.4f}, Val CDF PDOS RMSE: {:.4f}".format(epoch, train_pdos_rmse, val_pdos_rmse, train_cdf_pdos_rmse, val_cdf_pdos_rmse))
+def print_output(epoch: int, train_loss: float, val_loss: float, train_pdos_rmse: float, val_pdos_rmse: float, train_cdf_pdos_rmse: float, val_cdf_pdos_rmse: float):
+    print("Epoch: {}, Train Loss: {:.4f}, Val Loss: {:.4f}, Train PDOS RMSE: {:.4f}, Val PDOS RMSE: {:.4f}, Train CDF PDOS RMSE: {:.4f}, Val CDF PDOS RMSE: {:.4f}".format(epoch, train_loss, val_loss, train_pdos_rmse, val_pdos_rmse, train_cdf_pdos_rmse, val_cdf_pdos_rmse))
 
 
 def plot_training_curve(save_path: str, val_loss_list: List, train_loss_list: List, fold: int):
@@ -118,8 +118,8 @@ def plot_training_curve(save_path: str, val_loss_list: List, train_loss_list: Li
     """
     epochs = range(1, len(val_loss_list)+1)
     fig = plt.figure(figsize=(12,8))
-    plt.set_xlabel('epochs')
-    plt.set_ylabel('Loss')
+    plt.xlabel('epochs')
+    plt.ylabel('Loss')
     plt.plot(epochs, train_loss_list, label = "Training Loss", color = 'tab:olive')
     plt.plot(epochs, val_loss_list, label = "Validation Loss", color = 'tab:green')
     plt.yscale('log')

@@ -100,13 +100,13 @@ def main(args):
         assert args.data_file is not None, "Please provide tar dataset file containing processed data."
         #with open(f'{args.model_config}', 'r') as config_file:
         #    config = json.load(config_file)
-        config = {"n_conv": 2, "weight_decay": 0.0}
+        config = {"n_conv": args.n_conv, "weight_decay": args.wd}
         run_cross_validation(config, args, save_path)
        
     
     # If task is test, use pretrained model to predict PDOS on test set 
     if args.task == "test":
-        config = {"n_conv": 2, "weight_decay": 0.0}
+        config = {"n_conv": args.n_conv, "weight_decay": args.wd}
         assert args.test_ids is not None, "Please provide list of material ids for the test (test_ids.csv)."
         assert args.data_file is not None, "Please provide tar dataset file containing processed data."
         assert args.model is not None, "Please provide path to pretrained model"
@@ -212,7 +212,14 @@ if __name__ == '__main__':
     parser.add_argument("--model", default=None,
                         help="Provide pretrained model. Default: None")
 
-    parser.add_argument("--batch_size", default=32, type=int, help="Provide batch size. Default: 32")
+    parser.add_argument("--batch_size", default=32, type=int, 
+                        help="Provide batch size. Default: 32")
+
+    parser.add_argument("--n_conv", default=2, type=int,
+                        help="Provide number of graph convolution layers. Default: 2")
+    
+    parser.add_argument("--wd", default=0.0, type=float,
+                        help="Provide weight decay value. Default: 0.0")
 
     parser.add_argument("--epochs", default=100, type=int,
                         help="Provide number of epochs for training the model. Default: 100")

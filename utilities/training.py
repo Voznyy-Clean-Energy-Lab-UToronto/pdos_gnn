@@ -13,6 +13,8 @@ from utilities.utils import Scaler
 from utilities.data import MaterialData
 from sklearn.model_selection import KFold
 from torch_geometric.loader import DataLoader
+from torch.nn.functional import mse_loss
+from sklearn.metrics import mean_squared_error
 from utilities.utils import save_model, save_training_curves, save_cv_results, print_output, plot_training_curve
 
 
@@ -64,9 +66,12 @@ def run_cross_validation(config: dict, args, save_path: str):
 
         metric = nn.MSELoss()
         if config["weight_decay"] == 0.0:
+            print(" Using Adam optimizer")
             optimizer = optim.Adam(model.parameters())
         else:
+            print(" Using AdamW optimizer")
             optimizer = optim.AdamW(model.parameters(), weight_decay=config["weight_decay"])
+            #optimizer = optim.AdamW(model.parameters(), weight_decay=config["weight_decay"])
 
         # wandb.init(
         #     reinit=True,
@@ -134,7 +139,7 @@ def run_cross_validation(config: dict, args, save_path: str):
                 model, optimizer, metric, epoch, train_loader, train_on_dos=args.train_on_dos, train_on_atomic_dos=args.train_on_atomic_dos, use_cuda=args.cuda, use_cdf=args.use_cdf, scaler=scaler)
             val_loss, val_pdos_rmse, val_cdf_pdos_rmse = validation(
                 model, metric, epoch, fold, save_path, validation_loader, train_on_dos=args.train_on_dos, train_on_atomic_dos=args.train_on_atomic_dos, use_cuda=args.cuda, use_cdf=args.use_cdf, scaler=scaler)
-            print_output(epoch, train_pdos_rmse, val_pdos_rmse, train_cdf_pdos_rmse, val_cdf_pdos_rmse)
+            print_output(epoch, train_loss, val_loss, train_pdos_rmse, val_pdos_rmse, train_cdf_pdos_rmse, val_cdf_pdos_rmse)
        
             val_loss_list.append(val_loss)
             train_loss_list.append(train_loss)
@@ -267,10 +272,10 @@ def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, tra
             output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
             loss = metric(torch.flatten(output_pdos), torch.flatten(target))
             loss_item = loss.item()
-            cdf_mse = loss.item()
+            cdf_mse = mean_squared_error(torch.flatten(output_pdos).detach().numpy(), torch.flatten(target).detach().numpy())#.item()
             output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
             output_pdos_diff[output_pdos_diff<0] = 0.0
-            pdos_mse = metric(output_pdos_diff, torch.diff(target, dim=1)/e_diff).item()
+            pdos_mse = mean_squared_error(output_pdos_diff.detach().numpy(), (torch.diff(target, dim=1)/e_diff).detach().numpy())#.item()
 
         else:
 
@@ -364,7 +369,7 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
     running_cdf_pdos_rmse = 0.0
 
 
-    for data in tqdm(validation_loader):
+    for data in tqdm(validation_loader, disable = not test):
         e_diff = torch.mean(data.e_diff)
 
         if save_output:
@@ -403,11 +408,11 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
                 loss = metric(torch.flatten(output_pdos), torch.flatten(target))
                 loss_item = loss.item()
-                cdf_mse = loss.item()
+                cdf_mse = mean_squared_error(torch.flatten(output_pdos).detach().numpy(), torch.flatten(target).detach().numpy()).item()
                 output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
                 output_pdos_diff[output_pdos_diff<0] = 0.0
                 target_pdos_diff = torch.diff(target, dim=1)/e_diff
-                pdos_mse = metric(output_pdos_diff, target_pdos_diff).item()
+                pdos_mse = mean_squared_error(output_pdos_diff.detach().numpy(), target_pdos_diff.detach().numpy()).item()
             else:
 
                 if scaler is not None:
@@ -420,7 +425,7 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
                 loss = metric(output_pdos, target)
                 loss_item = loss.item()
                 pdos_mse = loss.item()
-                cdf_mse = metric(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
+                cdf_mse = mse_loss(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
         
         #if not test:
         #    wandb.log({"val_loss": loss_item, "val_pdos_mse": pdos_mse, "val_cdf_mse": cdf_mse, "epoch": epoch, "batch": batch_idx})
