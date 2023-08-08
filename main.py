@@ -212,8 +212,14 @@ if __name__ == '__main__':
     parser.add_argument("--model", default=None,
                         help="Provide pretrained model. Default: None")
 
+    parser.add_argument("--optim", choices=['Adam', 'AdamW'], default="Adam",
+                        help="Select optimizer. Default: Adam")
+
     parser.add_argument("--batch_size", default=32, type=int, 
                         help="Provide batch size. Default: 32")
+
+    parser.add_argument("--lr", default=0.001, type=float, 
+                        help="Provide learning rate value. Default: 0.001")
 
     parser.add_argument("--n_conv", default=2, type=int,
                         help="Provide number of graph convolution layers. Default: 2")
@@ -270,4 +276,5 @@ if __name__ == '__main__':
                         help="If True, normalize orbital PDOS to area = 1. Default: False")
 
     args = parser.parse_args()
+    
     main(args)
