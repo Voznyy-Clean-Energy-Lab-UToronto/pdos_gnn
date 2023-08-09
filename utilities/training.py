@@ -281,9 +281,9 @@ def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, tra
 
             target = data.pdos_cdf
             output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-            loss = metric(torch.flatten(output_pdos), torch.flatten(target))
+            loss = metric(output_pdos, target)
             loss_item = loss.item()
-            cdf_mse = mse_loss(torch.flatten(output_pdos), torch.flatten(target)).item()
+            cdf_mse = mse_loss(output_pdos, target).item()
             output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
             output_pdos_diff[output_pdos_diff<0] = 0.0
             pdos_mse = mse_loss(output_pdos_diff, (torch.diff(target, dim=1)/e_diff)).item()
@@ -366,6 +366,9 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
         
     """
     model.eval()
+
+
+    id_error_df_list = []
     
     if save_output:
         save_dos_list = []
@@ -417,13 +420,14 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
                     
                 target = data.pdos_cdf
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-                loss = metric(torch.flatten(output_pdos), torch.flatten(target))
+                loss = metric(output_pdos, target)
                 loss_item = loss.item()
-                cdf_mse = mse_loss(torch.flatten(output_pdos), torch.flatten(target)).item()
+                cdf_mse = mse_loss(output_pdos, target).item()
                 output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
                 output_pdos_diff[output_pdos_diff<0] = 0.0
                 target_pdos_diff = torch.diff(target, dim=1)/e_diff
                 pdos_mse = mse_loss(output_pdos_diff, target_pdos_diff).item()
+  
             else:
 
                 if scaler is not None:
@@ -444,6 +448,30 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
         running_loss += loss_item
         running_pdos_rmse += pdos_mse
         running_cdf_pdos_rmse += cdf_mse
+
+
+        if epoch%50 == 0:
+            ids_list = []
+            for orbitals, id in zip(data.orbital_types, data.material_id):
+                ids_list.append([id]*len(orbitals))
+
+            ids_list = list(itertools.chain.from_iterable(ids_list))
+            sites = list(itertools.chain.from_iterable(data.sites))
+            elements = list(itertools.chain.from_iterable(data.elements))
+            orbital_types = list(itertools.chain.from_iterable(data.orbital_types))
+
+            output_pdos_orb_cdf = output_pdos.reshape(len(ids_list), 256)
+            target_pdos_orb_cdf = target.reshape(len(ids_list), 256)
+            rmse_orb_cdf = ((output_pdos_orb_cdf-target_pdos_orb_cdf)**2).sum(dim=1).sqrt().cpu().detach().numpy()
+
+            output_pdos_orb = output_pdos_diff.reshape(len(ids_list), 255)
+            target_pdos_orb = target_pdos_diff.reshape(len(ids_list), 255)
+            rmse_orb = ((output_pdos_orb-target_pdos_orb)**2).sum(dim=1).sqrt().cpu().detach().numpy()
+
+            id_error_df = pd.DataFrame({"id": ids_list, "element": elements, "site": sites, "orbital": orbital_types, "rmse": rmse_orb, "rmse_cdf": rmse_orb_cdf})
+            id_error_df_list.append(id_error_df)
+
+
         
         if save_output:
             if use_cdf:
@@ -517,5 +545,9 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
     epoch_loss = running_loss/n_iter
     epoch_pdos_rmse = running_pdos_rmse/n_iter
     epoch_cdf_pdos_rmse = running_cdf_pdos_rmse/n_iter
+
+    if epoch % 50 == 0:
+        id_error_total_df = pd.concat(id_error_df_list)
+        id_error_total_df.to_csv('test_outputs/%s/'%save_path + f"orbital_rmse_epoch_{epoch}_fold_{fold}.csv", index=False)
     
     return epoch_loss, epoch_pdos_rmse, epoch_cdf_pdos_rmse

@@ -68,8 +68,8 @@ class ProDosNet(nn.Module):
         self.fc_out_1 = nn.Linear(orig_atom_fea_len, 256) 
         self.fc_out_2 = nn.Linear(256, 512)
         self.fc_out_3 = nn.Linear(512, n_orbitals*grid)
-    #    self.dropout_1 = nn.Dropout(p=0.2)
-    #    self.dropout_2 = nn.Dropout(p=0.2)
+        self.dropout_1 = nn.Dropout(p=0.2)
+        self.dropout_2 = nn.Dropout(p=0.2)
 
 
     def forward(self, node_fea, edge_index, edge_attr, batch, atoms_batch): 
@@ -82,9 +82,9 @@ class ProDosNet(nn.Module):
             node_fea = conv_func(x=node_fea, edge_index=edge_index, edge_attr=edge_attr)
 
         node_fea = self.conv_to_fc_softplus(self.fc_out_1(node_fea))
-    #    node_fea = self.dropout_1(node_fea)
+        node_fea = self.dropout_1(node_fea)
         node_fea = self.conv_to_fc_softplus(self.fc_out_2(node_fea))
-    #    node_fea = self.dropout_2(node_fea)
+        node_fea = self.dropout_2(node_fea)
         pdos = self.conv_to_fc_sigmoid(self.fc_out_3(node_fea))
         
         dos = gsp(pdos, batch)

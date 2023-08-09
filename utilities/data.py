@@ -36,6 +36,8 @@ class MaterialData(Dataset):
 
 
         material_graph = torch.load(self.graphs_data.extractfile(os.path.basename(self.data_file).removesuffix('.tar')+f'/{cif_id}_crystal_graph_pdos.pt'))
+
+        material_graph.edge_attr = torch.squeeze(material_graph.edge_attr, 1)
         #material_graph = torch.load(self.data_file+f"/{cif_id}_crystal_graph_pdos.pt")
         target_pdos = material_graph.pdos
 
