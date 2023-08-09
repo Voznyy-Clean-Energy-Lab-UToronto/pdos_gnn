@@ -14,7 +14,6 @@ from utilities.data import MaterialData
 from sklearn.model_selection import KFold
 from torch_geometric.loader import DataLoader
 from torch.nn.functional import mse_loss
-from sklearn.metrics import mean_squared_error
 from utilities.utils import save_model, save_training_curves, save_cv_results, print_output, plot_training_curve
 
 
@@ -65,13 +64,12 @@ def run_cross_validation(config: dict, args, save_path: str):
             model.to(device)
 
         metric = nn.MSELoss()
-        if config["weight_decay"] == 0.0:
+        if args.optim == "Adam":
             print(" Using Adam optimizer")
-            optimizer = optim.Adam(model.parameters())
-        else:
+            optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+        elif args.optim == "AdamW":
             print(" Using AdamW optimizer")
-            optimizer = optim.AdamW(model.parameters(), weight_decay=config["weight_decay"])
-            #optimizer = optim.AdamW(model.parameters(), weight_decay=config["weight_decay"])
+            optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
         # wandb.init(
         #     reinit=True,
@@ -94,6 +92,7 @@ def run_cross_validation(config: dict, args, save_path: str):
         # if args.cuda:
         #    device = torch.device("cuda")
         #    model.to(device)
+        wieght_sum_list = []
 
         val_loss_list = []
         train_loss_list = []
@@ -140,6 +139,15 @@ def run_cross_validation(config: dict, args, save_path: str):
             val_loss, val_pdos_rmse, val_cdf_pdos_rmse = validation(
                 model, metric, epoch, fold, save_path, validation_loader, train_on_dos=args.train_on_dos, train_on_atomic_dos=args.train_on_atomic_dos, use_cuda=args.cuda, use_cdf=args.use_cdf, scaler=scaler)
             print_output(epoch, train_loss, val_loss, train_pdos_rmse, val_pdos_rmse, train_cdf_pdos_rmse, val_cdf_pdos_rmse)
+
+            n_parameters = 0
+            layer_sum_list = []
+            for parameters in model.parameters():
+                n_parameters += torch.numel(parameters)
+                parameters_np = parameters.cpu().data.numpy()
+                layer_sum_list.append(np.sum(np.abs(parameters_np)))
+            total_weight_sum = np.sum(layer_sum_list).item()/n_parameters
+            wieght_sum_list.append(total_weight_sum)
        
             val_loss_list.append(val_loss)
             train_loss_list.append(train_loss)
@@ -179,6 +187,9 @@ def run_cross_validation(config: dict, args, save_path: str):
                 model_state = {'epoch': epoch, 'state_dict': model.state_dict(), 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss,
                                     'best_val_pdos_rmse': best_val_pdos_rmse, 'best_train_pdos_rmse': best_train_pdos_rmse, 'best_val_cdf_pdos_rmse': best_val_cdf_pdos_rmse, 'best_train_cdf_pdos_rmse': best_train_cdf_pdos_rmse, 'optimizer': optimizer.state_dict(), 'args': vars(args)}
                 save_model(model_state, epoch, save_path, fold)
+
+                training_curve_list = [val_loss_list, train_loss_list, val_pdos_rmse_list, train_pdos_rmse_list, val_cdf_pdos_rmse_list, train_cdf_pdos_rmse_list, wieght_sum_list]
+                training_curve_name_list = ["Val loss", "Train loss", "Val PDOS RMSE", "Train PDOS RMSE", "Val CDF PDOS RMSE", "Train CDF PDOS RMSE", "Weight Sum"]
                 save_training_curves(fold+1, training_curve_list, training_curve_name_list, save_path)
 
         fold_val_loss_list.append(best_val_loss)
@@ -191,8 +202,8 @@ def run_cross_validation(config: dict, args, save_path: str):
         if args.save_best_model:
             save_model(model_state_best, epoch, save_path, fold=fold, best=True)
         
-        training_curve_list = [val_loss_list, train_loss_list, val_pdos_rmse_list, train_pdos_rmse_list, val_cdf_pdos_rmse_list, train_cdf_pdos_rmse_list]
-        training_curve_name_list = ["Val loss", "Train loss", "Val PDOS RMSE", "Train PDOS RMSE", "Val CDF PDOS RMSE", "Train CDF PDOS RMSE"]
+        training_curve_list = [val_loss_list, train_loss_list, val_pdos_rmse_list, train_pdos_rmse_list, val_cdf_pdos_rmse_list, train_cdf_pdos_rmse_list, wieght_sum_list]
+        training_curve_name_list = ["Val loss", "Train loss", "Val PDOS RMSE", "Train PDOS RMSE", "Val CDF PDOS RMSE", "Train CDF PDOS RMSE", "Weight Sum"]
         save_training_curves(fold+1, training_curve_list, training_curve_name_list, save_path)
 
 
@@ -272,10 +283,10 @@ def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, tra
             output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
             loss = metric(torch.flatten(output_pdos), torch.flatten(target))
             loss_item = loss.item()
-            cdf_mse = mean_squared_error(torch.flatten(output_pdos).detach().numpy(), torch.flatten(target).detach().numpy())#.item()
+            cdf_mse = mse_loss(torch.flatten(output_pdos), torch.flatten(target)).item()
             output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
             output_pdos_diff[output_pdos_diff<0] = 0.0
-            pdos_mse = mean_squared_error(output_pdos_diff.detach().numpy(), (torch.diff(target, dim=1)/e_diff).detach().numpy())#.item()
+            pdos_mse = mse_loss(output_pdos_diff, (torch.diff(target, dim=1)/e_diff)).item()
 
         else:
 
@@ -305,24 +316,24 @@ def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, tra
     epoch_pdos_rmse = running_pdos_rmse/n_iter
     epoch_cdf_pdos_rmse = running_cdf_pdos_rmse/n_iter
     
-    if epoch % 3000 == 0:
-        fig = plt.figure()
-        plt.plot(np.linspace(-20, 10, 256), target.detach().numpy()[0])
-        plt.plot(np.linspace(-20, 10, 256), output_pdos.data.cpu().detach().numpy()[0])
-        plt.title("Training Predition")
-        plt.show()
-        if use_cdf:
-            fig = plt.figure()
-            plt.plot(np.linspace(-20, 10, 256)[1:], (torch.diff(target, dim=1)/e_diff).detach().numpy()[0])
-            plt.plot(np.linspace(-20, 10, 256)[1:], (torch.diff(output_pdos, dim=1)/e_diff).data.cpu().detach().numpy()[0])
-            plt.title("Training Predition derivative")
-            plt.show()
-        else:
-            fig = plt.figure()
-            plt.plot(np.linspace(-20, 10, 256)[1:], (torch.cumsum(target, dim=1)*e_diff).detach().numpy()[0])
-            plt.plot(np.linspace(-20, 10, 256)[1:], (torch.cumsum(output_pdos, dim=1)*e_diff).data.cpu().detach().numpy()[0])
-            plt.title("Training Predition derivative")
-            plt.show()
+    # if epoch % 3000 == 0:
+    #     fig = plt.figure()
+    #     plt.plot(np.linspace(-20, 10, 256), target.detach().numpy()[0])
+    #     plt.plot(np.linspace(-20, 10, 256), output_pdos.data.cpu().detach().numpy()[0])
+    #     plt.title("Training Predition")
+    #     plt.show()
+    #     if use_cdf:
+    #         fig = plt.figure()
+    #         plt.plot(np.linspace(-20, 10, 256)[1:], (torch.diff(target, dim=1)/e_diff).detach().numpy()[0])
+    #         plt.plot(np.linspace(-20, 10, 256)[1:], (torch.diff(output_pdos, dim=1)/e_diff).data.cpu().detach().numpy()[0])
+    #         plt.title("Training Predition derivative")
+    #         plt.show()
+    #     else:
+    #         fig = plt.figure()
+    #         plt.plot(np.linspace(-20, 10, 256)[1:], (torch.cumsum(target, dim=1)*e_diff).detach().numpy()[0])
+    #         plt.plot(np.linspace(-20, 10, 256)[1:], (torch.cumsum(output_pdos, dim=1)*e_diff).data.cpu().detach().numpy()[0])
+    #         plt.title("Training Predition derivative")
+    #         plt.show()
 
 
     return epoch_loss, epoch_pdos_rmse, epoch_cdf_pdos_rmse
@@ -408,11 +419,11 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
                 loss = metric(torch.flatten(output_pdos), torch.flatten(target))
                 loss_item = loss.item()
-                cdf_mse = mean_squared_error(torch.flatten(output_pdos).detach().numpy(), torch.flatten(target).detach().numpy()).item()
+                cdf_mse = mse_loss(torch.flatten(output_pdos), torch.flatten(target)).item()
                 output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
                 output_pdos_diff[output_pdos_diff<0] = 0.0
                 target_pdos_diff = torch.diff(target, dim=1)/e_diff
-                pdos_mse = mean_squared_error(output_pdos_diff.detach().numpy(), target_pdos_diff.detach().numpy()).item()
+                pdos_mse = mse_loss(output_pdos_diff, target_pdos_diff).item()
             else:
 
                 if scaler is not None:
