@@ -1,5 +1,4 @@
 import os
-import json
 import tqdm
 import torch
 import tarfile
@@ -7,13 +6,11 @@ import random
 import argparse
 import numpy as np
 import pandas as pd
-import torch.nn as nn
 from datetime import date
 from utilities.data import MaterialData
 from models.crystal_model import ProDosNet
 from utilities.preprocess import CrystalGraphPDOS
 from torch_geometric.loader import DataLoader
-from utilities.utils import plot_output_distribution
 from utilities.training import run_cross_validation, run_test
 
 def main(args):

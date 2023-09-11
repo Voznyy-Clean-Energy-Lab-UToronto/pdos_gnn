@@ -34,15 +34,13 @@ class MaterialData(Dataset):
     def __getitem__(self, idx):
         cif_id = self.ids[idx]
 
-
         material_graph = torch.load(self.graphs_data.extractfile(os.path.basename(self.data_file).removesuffix('.tar')+f'/{cif_id}_crystal_graph_pdos.pt'))
-
         material_graph.edge_attr = torch.squeeze(material_graph.edge_attr, 1)
-        #material_graph = torch.load(self.data_file+f"/{cif_id}_crystal_graph_pdos.pt")
-        target_pdos = material_graph.pdos
 
+        target_pdos = material_graph.pdos
         n_atoms = int(target_pdos.shape[0]/self.n_orbitals)
         atoms = []
+        
         for i in range(n_atoms):
             atoms.extend([i]*self.n_orbitals)
         atoms_batch = torch.LongTensor(np.array(atoms))
