@@ -4,6 +4,10 @@ In this work, we developed a Graph Neural Network (GNN) ProDosNet which is train
 
 ## The model is available via web application: [ProDosMate](https://huggingface.co/spaces/inep/prodosmate "ProDosMate")
 ### Predict the Projected Density of States
+<p align="center">
+  <img src="https://github.com/ineporozhnii/pdos_gnn/blob/main/assets/ProDosMate_demo_predict_pdos.gif" alt="animated" />
+</p>
+
 ### Find materials with similar PDOS
 ### Explore material space structured by PDOS similarity 
 
@@ -22,5 +26,5 @@ In this work, we developed a Graph Neural Network (GNN) ProDosNet which is train
   - `python main.py --task preprocess  --preprocess_ids path/to/ids.csv --cif_dir path/to/cif_files --dos_dir path/to/raw_dos_files`
 3. Run training
   - `python main.py --task cross_val  --train_ids path/to/train_ids.csv --data_file path/to/processed_data.tar`
-4. Predict using pre-trained model
+4. Predict using a pre-trained model
   - `python main.py --task test  --test_ids path/to/test_ids.csv --data_file path/to/processed_data.tar --model path/to/pretrained_pdos_model.pth.tar`
