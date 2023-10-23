@@ -1,6 +1,3 @@
-
-import os
-import wandb
 import torch
 import itertools
 import numpy as np
@@ -8,13 +5,15 @@ import pandas as pd
 import torch.nn as nn
 from tqdm import tqdm
 import torch.optim as optim
-import matplotlib.pyplot as plt
 from utilities.utils import Scaler
 from utilities.data import MaterialData
 from sklearn.model_selection import KFold
 from torch_geometric.loader import DataLoader
+from models.crystal_model import ProDosNet
 from torch.nn.functional import mse_loss
 from utilities.utils import save_model, save_training_curves, save_cv_results, print_output, plot_training_curve
+
+from typing import Tuple
 
 
 def run_cross_validation(config: dict, args, save_path: str):
@@ -48,12 +47,6 @@ def run_cross_validation(config: dict, args, save_path: str):
     dataset = MaterialData(data_file=args.data_file, id_file=args.train_ids)
     splits = KFold(n_splits=args.kfold, shuffle=True, random_state=42)
 
-    print("---------------------- Initializing Model ---------------------- \n")
-
-    
-    # model_state = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
-    # save_model(model_state, epoch=0, save_path=save_path, init=True)
-
     print("------------------------ Training Model ------------------------ \n")
     for fold, (train_ids, val_ids) in enumerate(splits.split(np.arange(len(dataset)))):
 
@@ -71,27 +64,8 @@ def run_cross_validation(config: dict, args, save_path: str):
             print(" Using AdamW optimizer")
             optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
-        # wandb.init(
-        #     reinit=True,
-        #     # set the wandb project where this run will be logged
-        #     project = "PDOS_ML",
-        #     name = f"{args.model_name}/{args.name}/fold-{fold}",
-        #     group = f"{args.model_name}/{args.name}",
-        #     save_code = False,
-            
-        #     # track hyperparameters and run metadata
-        #     config = args
-        # )
-
         print("---------------------------- Fold {} ----------------------------".format(fold+1))
         
-        # initial_model = torch.load('test_outputs/%s/model_init.pth.tar'%save_path, map_location=torch.device('cpu'))
-        # model.load_state_dict(initial_model['state_dict'])
-        # optimizer.load_state_dict(initial_model['optimizer'])
-
-        # if args.cuda:
-        #    device = torch.device("cuda")
-        #    model.to(device)
         wieght_sum_list = []
 
         val_loss_list = []
@@ -129,8 +103,6 @@ def run_cross_validation(config: dict, args, save_path: str):
             scaler = Scaler(training_distances)
         else:
             scaler = None
-
-        #wandb.watch(model, metric, log_freq=100, log='all')
         
         # Train the model
         for epoch in range(1, args.epochs+1):
@@ -235,7 +207,7 @@ def run_cross_validation(config: dict, args, save_path: str):
           
 
 
-def run_test(args, save_path, test_loader, model):
+def run_test(args, save_path: str, test_loader: DataLoader, model: ProDosNet):
     metric = nn.MSELoss()
     pretrained_model = torch.load(args.model, map_location=torch.device('cpu'))
     model.load_state_dict(pretrained_model['state_dict'])
@@ -257,7 +229,14 @@ def run_test(args, save_path, test_loader, model):
 
 
 
-def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, train_on_atomic_dos=False, use_cuda=False, use_cdf=False, scaler=None):
+def train(model: ProDosNet, 
+          optimizer: torch.optim, 
+          metric: nn.MSELoss, 
+          train_loader: DataLoader, 
+          use_cuda: bool = False, 
+          use_cdf: bool = False, 
+          scaler: Scaler = None) -> Tuple[float, float, float]:
+    
     model.train()
     
     n_iter = len(train_loader)
@@ -273,7 +252,6 @@ def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, tra
             data = data.to(device)
 
         if use_cdf: 
-
             if scaler is not None:
                 edge_attr = scaler.norm(data.edge_attr)
             else: 
@@ -289,7 +267,6 @@ def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, tra
             pdos_mse = mse_loss(output_pdos_diff, (torch.diff(target, dim=1)/e_diff)).item()
 
         else:
-
             if scaler is not None:
                 edge_attr = scaler.norm(data.edge_attr)
             else: 
@@ -302,8 +279,6 @@ def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, tra
             pdos_mse = loss.item()
             cdf_mse = metric(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
 
-        #wandb.log({"train_loss": loss_item, "train_pdos_mse": pdos_mse, "train_cdf_mse": cdf_mse, "epoch": epoch, "batch": batch_idx})
-
         running_loss += loss_item
         running_pdos_rmse += pdos_mse
         running_cdf_pdos_rmse += cdf_mse
@@ -315,61 +290,53 @@ def train(model, optimizer, metric, epoch, train_loader, train_on_dos=False, tra
     epoch_loss = running_loss/n_iter
     epoch_pdos_rmse = running_pdos_rmse/n_iter
     epoch_cdf_pdos_rmse = running_cdf_pdos_rmse/n_iter
-    
-    # if epoch % 3000 == 0:
-    #     fig = plt.figure()
-    #     plt.plot(np.linspace(-20, 10, 256), target.detach().numpy()[0])
-    #     plt.plot(np.linspace(-20, 10, 256), output_pdos.data.cpu().detach().numpy()[0])
-    #     plt.title("Training Predition")
-    #     plt.show()
-    #     if use_cdf:
-    #         fig = plt.figure()
-    #         plt.plot(np.linspace(-20, 10, 256)[1:], (torch.diff(target, dim=1)/e_diff).detach().numpy()[0])
-    #         plt.plot(np.linspace(-20, 10, 256)[1:], (torch.diff(output_pdos, dim=1)/e_diff).data.cpu().detach().numpy()[0])
-    #         plt.title("Training Predition derivative")
-    #         plt.show()
-    #     else:
-    #         fig = plt.figure()
-    #         plt.plot(np.linspace(-20, 10, 256)[1:], (torch.cumsum(target, dim=1)*e_diff).detach().numpy()[0])
-    #         plt.plot(np.linspace(-20, 10, 256)[1:], (torch.cumsum(output_pdos, dim=1)*e_diff).data.cpu().detach().numpy()[0])
-    #         plt.title("Training Predition derivative")
-    #         plt.show()
-
 
     return epoch_loss, epoch_pdos_rmse, epoch_cdf_pdos_rmse
 
 
-def validation(model, metric, epoch, fold, save_path, validation_loader, train_on_dos=False, train_on_atomic_dos=False, save_output=False, save_dos=False, save_pdos=False, use_cuda=False, use_cdf=False, test=False, scaler=None):
+def validation(model: ProDosNet,
+               metric: nn.MSELoss, 
+               epoch: int, 
+               fold: int, 
+               save_path: str, 
+               validation_loader: DataLoader, 
+               save_output: bool = False,  
+               save_dos: bool = False, 
+               save_pdos: bool = False, 
+               save_id_rmse: bool = False,
+               save_id_rmse_interv: int = 50,
+               use_cuda: bool = False, 
+               use_cdf: bool = False, 
+               test: bool = False, 
+               scaler: Scaler = None) -> Tuple[float, float, float]:
     """
         Runs model predictions on validation or test set and returns loss and errors
         ----------------------------------------------------------------------------
         Input:
-            - model:                
-                ProDosNet 
-            - metric:                   
-                RMSE Loss
-            - fold: int                      Cross-Valifation fold
-            - epoch: int                     Training epoch
-            - n_epochs: int                  Total (maximum) number of epochs 
-            - save_path: str                 Path where outputs will be saved
-            - validation_loader:    Data loader for validation dataset
-
-            - train_on_dos: bool             If True, computes error on total Density of States
-            - train_on_atomic_dos: bool      If True, computes error on atomic Density of States
-            - use_cuda: bool            
-                If True (GPU is available), loads data to GPU 
-            - use_cdf: bool         
-                If True, uses RMSE Loss of CDFs
-            - test: bool                 
-                If True, saves test set outputs
+            - model:                   ProDosNet model
+            - metric:                  MSE Loss
+            - epoch                    Training epoch
+            - fold                     Cross-Valifation fold
+            - save_path                Path where outputs will be saved
+            - validation_loader        Data loader for validation dataset
+            - save_output              If True, saves validation output
+            - save_dos                 If True, saves DOS validation predictions
+            - save_pdos                If True, saves PDOS validation predictions
+            - save_id_rmse             If True, saves validation rmse for each material separately
+            - save_id_rmse_interv      Saves rmse for each material every *save_id_rmse_interv* epoch
+            - use_cuda                 If True, (GPU is available), loads data to GPU 
+            - use_cdf                  If True, uses RMSE Loss of CDFs
+            - test                     If True, saves test set outputs
+            - scaler                   scale edge features
         Output:
+            - epoch_loss
+            - epoch_pdos_rmse
+            - epoch_cdf_pdos_rmse
         
     """
     model.eval()
 
-
     id_error_df_list = []
-    
     if save_output:
         save_dos_list = []
         save_pdos_list = []
@@ -382,7 +349,6 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
     running_pdos_rmse = 0.0
     running_cdf_pdos_rmse = 0.0
 
-
     for data in tqdm(validation_loader, disable = not test):
         e_diff = torch.mean(data.e_diff)
 
@@ -391,66 +357,46 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
             target_pdos_cpu = data.pdos
             target_dos_cpu_cdf = data.dos_cdf
             target_pdos_cpu_cdf = data.pdos_cdf
-
                 
         if use_cuda:
             device = torch.device('cuda')
             data = data.to(device)
 
+        if use_cdf: 
 
-        if train_on_dos:
-            target_dos = data.dos
-            if use_cdf:
-                loss = metric(torch.flatten(output_dos_cdf), torch.flatten(target_dos_cdf))*alpha + metric(torch.flatten(output_dos_cdf_inverse), torch.flatten(target_dos_cdf_inverse))*alpha + metric(torch.flatten(output_dos), torch.flatten(target_dos))
-            else:
-                loss = metric(torch.flatten(output_dos), torch.flatten(target_dos))
-        elif train_on_atomic_dos:
-            target_atomic_dos = data.atomic_dos
-            if use_cdf:
-                loss = metric(torch.flatten(output_atomic_dos_cdf), torch.flatten(target_atomic_dos_cdf))*alpha + metric(torch.flatten(output_atomic_dos_cdf_inverse), torch.flatten(target_atomic_dos_cdf_inverse))*alpha + metric(torch.flatten(output_atomic_dos), torch.flatten(target_atomic_dos))
-            else:
-                loss = metric(torch.flatten(output_atomic_dos), torch.flatten(target_atomic_dos))
+            if scaler is not None:
+                edge_attr = scaler.norm(data.edge_attr)
+            else: 
+                edge_attr = data.edge_attr
+                
+            target = data.pdos_cdf
+            output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+            loss = metric(output_pdos, target)
+            loss_item = loss.item()
+            cdf_mse = mse_loss(output_pdos, target).item()
+            output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
+            output_pdos_diff[output_pdos_diff<0] = 0.0
+            target_pdos_diff = torch.diff(target, dim=1)/e_diff
+            pdos_mse = mse_loss(output_pdos_diff, target_pdos_diff).item()
+
         else:
-            if use_cdf: 
+            if scaler is not None:
+                edge_attr = scaler.norm(data.edge_attr)
+            else: 
+                edge_attr = data.edge_attr
 
-                if scaler is not None:
-                    edge_attr = scaler.norm(data.edge_attr)
-                else: 
-                    edge_attr = data.edge_attr
-                    
-                target = data.pdos_cdf
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-                loss = metric(output_pdos, target)
-                loss_item = loss.item()
-                cdf_mse = mse_loss(output_pdos, target).item()
-                output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
-                output_pdos_diff[output_pdos_diff<0] = 0.0
-                target_pdos_diff = torch.diff(target, dim=1)/e_diff
-                pdos_mse = mse_loss(output_pdos_diff, target_pdos_diff).item()
-  
-            else:
+            target = data.pdos
+            output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+            loss = metric(output_pdos, target)
+            loss_item = loss.item()
+            pdos_mse = loss.item()
+            cdf_mse = mse_loss(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
 
-                if scaler is not None:
-                    edge_attr = scaler.norm(data.edge_attr)
-                else: 
-                    edge_attr = data.edge_attr
-
-                target = data.pdos
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-                loss = metric(output_pdos, target)
-                loss_item = loss.item()
-                pdos_mse = loss.item()
-                cdf_mse = mse_loss(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
-        
-        #if not test:
-        #    wandb.log({"val_loss": loss_item, "val_pdos_mse": pdos_mse, "val_cdf_mse": cdf_mse, "epoch": epoch, "batch": batch_idx})
-        
         running_loss += loss_item
         running_pdos_rmse += pdos_mse
         running_cdf_pdos_rmse += cdf_mse
-
-
-        if epoch%50 == 0:
+        
+        if save_id_rmse and epoch%save_id_rmse_interv == 0:
             ids_list = []
             for orbitals, id in zip(data.orbital_types, data.material_id):
                 ids_list.append([id]*len(orbitals))
@@ -470,9 +416,7 @@ def validation(model, metric, epoch, fold, save_path, validation_loader, train_o
 
             id_error_df = pd.DataFrame({"id": ids_list, "element": elements, "site": sites, "orbital": orbital_types, "rmse": rmse_orb, "rmse_cdf": rmse_orb_cdf})
             id_error_df_list.append(id_error_df)
-
-
-        
+  
         if save_output:
             if use_cdf:
                 dos_to_save = torch.diff(output_dos, dim=1)/e_diff

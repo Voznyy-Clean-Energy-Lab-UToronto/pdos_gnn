@@ -279,15 +279,6 @@ class CrystalGraphPDOS():
 
                     target_orbital_density = interp_funtion(shifted_energies)
                     target_orbital_density_cdf = interp_funtion_cdf(shifted_energies)
-                    # plt.plot(energies_ext, densities_ext_cdf)
-                    # plt.plot(shifted_energies, target_orbital_density_cdf)
-                    # plt.plot(energies_ext, densities_ext)
-                    # plt.show()
-                    # plt.plot(shifted_energies, target_orbital_density_cdf, "--")
-                    # plt.plot(shifted_energies[:len(shifted_energies)-1], np.diff(target_orbital_density_cdf)/np.mean(np.diff(shifted_energies)), "--")
-                    # plt.xlabel("Energy, eV")
-                    # plt.ylabel("PDOS, states/eV")
-                    # plt.show() 
 
                     target_orbital_density = total_dos_norm_coef * target_orbital_density
                     target_pdos.append(target_orbital_density)
@@ -348,33 +339,12 @@ class CrystalGraphPDOS():
             warnings.warn("Structure {} does not match structure in PDOS file and will be skipped".format(material_file_name), stacklevel=2)
             return None
 
-        # Check that material PDOS does not contain f orbitals
-        # spd_dos = complete_dos.get_spd_dos()
-        # if len(spd_dos.keys()) > 3:
-        #     warnings.warn("Structure {} contains f orbitals in PDOS file and will be skipped".format(material_file_name), stacklevel=2)
-        #     return None
-        
         if self.norm_dos:
             # Check DOS normalization 
             norm_coefficient = self._get_normalization_coefficient(energy=complete_dos.energies, density=complete_dos.get_densities(spin=self.spin), e_min=np.min(complete_dos.energies), e_max=np.max(complete_dos.efermi), complete_dos=complete_dos)
         else:
             norm_coefficient = 1.0
-     #   if norm_coefficient > 1 + self.total_dos_norm_limits or norm_coefficient < 1 - self.total_dos_norm_limits:
-     #       warnings.warn("Structure {} might have incorrect DOS normalization and will be skipped".format(material_file_name), stacklevel=2)
-     #       return None
-        
-        # Check PDOS normalization
-        # for site in complete_dos.structure:
-        #     for orbital_n in range(9):
-        #         orbital = Orbital(orbital_n)
-        #         orbital_dos = complete_dos.get_site_orbital_dos(site, orbital)  
-        #         orbital_density = norm_coefficient * orbital_dos.get_densities(spin=self.spin)
-        #         orbital_norm_coefficient = self._get_normalization_coefficient(energy=orbital_dos.energies, density=orbital_density, e_min=np.min(orbital_dos.energies), e_max=np.max(orbital_dos.energies), orbital=True)
-        #         orbital_area = 2/orbital_norm_coefficient
-        #         if orbital_area > 2 + self.pdos_norm_limits or orbital_area < 2 - self.pdos_norm_limits:
-        #             warnings.warn("Structure {} might have incorrect PDOS normalization and will be skipped".format(material_file_name), stacklevel=2)
-        #             return None
-        
+
         # Get crystal graph
         graph_parameters = self._get_graph(crystal, material_file_name)
 
