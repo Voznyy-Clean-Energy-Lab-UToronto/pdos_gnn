@@ -181,6 +181,9 @@ def run_cross_validation(config: dict, args, save_path: str):
                     model_state_best = {'epoch': epoch, 'state_dict': model.state_dict(), 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss,
                                     'best_val_pdos_rmse': best_val_pdos_rmse, 'best_train_pdos_rmse': best_train_pdos_rmse, 'best_val_cdf_pdos_rmse': best_val_cdf_pdos_rmse, 'best_train_cdf_pdos_rmse': best_train_cdf_pdos_rmse, 'optimizer': optimizer.state_dict(), 'args': vars(args)}
             
+                    if args.save_best_model:
+                        save_model(model_state_best, epoch, save_path, fold=fold, best=True)
+
             if args.plot_training and epoch % args.plot_interval == 0:
                 plot_training_curve(save_path, val_loss_list, train_loss_list, fold=fold+1)
             if epoch % args.model_save_interval==0:
@@ -198,9 +201,6 @@ def run_cross_validation(config: dict, args, save_path: str):
         fold_train_pdos_rmse_list.append(best_train_pdos_rmse)
         fold_val_cdf_pdos_rmse_list.append(best_val_cdf_pdos_rmse)
         fold_train_cdf_pdos_rmse_list.append(best_train_cdf_pdos_rmse)
-
-        if args.save_best_model:
-            save_model(model_state_best, epoch, save_path, fold=fold, best=True)
         
         training_curve_list = [val_loss_list, train_loss_list, val_pdos_rmse_list, train_pdos_rmse_list, val_cdf_pdos_rmse_list, train_cdf_pdos_rmse_list, wieght_sum_list]
         training_curve_name_list = ["Val loss", "Train loss", "Val PDOS RMSE", "Train PDOS RMSE", "Val CDF PDOS RMSE", "Train CDF PDOS RMSE", "Weight Sum"]
