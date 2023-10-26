@@ -107,9 +107,9 @@ def run_cross_validation(config: dict, args, save_path: str):
         # Train the model
         for epoch in range(1, args.epochs+1):
             train_loss, train_pdos_rmse, train_cdf_pdos_rmse = train(
-                model, optimizer, metric, epoch, train_loader, train_on_dos=args.train_on_dos, train_on_atomic_dos=args.train_on_atomic_dos, use_cuda=args.cuda, use_cdf=args.use_cdf, scaler=scaler)
+                model, optimizer, metric, train_loader, train_on_dos=args.train_on_dos, use_cuda=args.cuda, use_cdf=args.use_cdf, scaler=scaler)
             val_loss, val_pdos_rmse, val_cdf_pdos_rmse = validation(
-                model, metric, epoch, fold, save_path, validation_loader, train_on_dos=args.train_on_dos, train_on_atomic_dos=args.train_on_atomic_dos, use_cuda=args.cuda, use_cdf=args.use_cdf, scaler=scaler)
+                model, metric, epoch, fold, save_path, validation_loader, train_on_dos=args.train_on_dos, use_cuda=args.cuda, use_cdf=args.use_cdf, scaler=scaler)
             print_output(epoch, train_loss, val_loss, train_pdos_rmse, val_pdos_rmse, train_cdf_pdos_rmse, val_cdf_pdos_rmse)
 
             n_parameters = 0
@@ -235,6 +235,7 @@ def train(model: ProDosNet,
           train_loader: DataLoader, 
           use_cuda: bool = False, 
           use_cdf: bool = False, 
+          train_on_dos: bool = False,
           scaler: Scaler = None) -> Tuple[float, float, float]:
     
     model.train()
@@ -251,33 +252,63 @@ def train(model: ProDosNet,
             device = torch.device('cuda')
             data = data.to(device)
 
-        if use_cdf: 
-            if scaler is not None:
-                edge_attr = scaler.norm(data.edge_attr)
-            else: 
-                edge_attr = data.edge_attr
+        if train_on_dos:
+            if use_cdf: 
+                if scaler is not None:
+                    edge_attr = scaler.norm(data.edge_attr)
+                else: 
+                    edge_attr = data.edge_attr
 
-            target = data.pdos_cdf
-            output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-            loss = metric(output_pdos, target)
-            loss_item = loss.item()
-            cdf_mse = mse_loss(output_pdos, target).item()
-            output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
-            output_pdos_diff[output_pdos_diff<0] = 0.0
-            pdos_mse = mse_loss(output_pdos_diff, (torch.diff(target, dim=1)/e_diff)).item()
+                target = data.dos_cdf
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                loss = metric(output_dos, target)
+                loss_item = loss.item()
+                cdf_mse = mse_loss(output_dos, target).item()
+                output_dos_diff = torch.diff(output_dos, dim=1)/e_diff
+                output_dos_diff[output_dos_diff<0] = 0.0
+                pdos_mse = mse_loss(output_dos_diff, (torch.diff(target, dim=1)/e_diff)).item()
+
+            else:
+                if scaler is not None:
+                    edge_attr = scaler.norm(data.edge_attr)
+                else: 
+                    edge_attr = data.edge_attr
+
+                target = data.dos
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                loss = metric(output_dos, target)
+                loss_item = loss.item()
+                pdos_mse = loss.item()
+                cdf_mse = metric(torch.cumsum(output_dos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
 
         else:
-            if scaler is not None:
-                edge_attr = scaler.norm(data.edge_attr)
-            else: 
-                edge_attr = data.edge_attr
+            if use_cdf: 
+                if scaler is not None:
+                    edge_attr = scaler.norm(data.edge_attr)
+                else: 
+                    edge_attr = data.edge_attr
 
-            target = data.pdos
-            output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-            loss = metric(output_pdos, target)
-            loss_item = loss.item()
-            pdos_mse = loss.item()
-            cdf_mse = metric(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
+                target = data.pdos_cdf
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                loss = metric(output_pdos, target)
+                loss_item = loss.item()
+                cdf_mse = mse_loss(output_pdos, target).item()
+                output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
+                output_pdos_diff[output_pdos_diff<0] = 0.0
+                pdos_mse = mse_loss(output_pdos_diff, (torch.diff(target, dim=1)/e_diff)).item()
+
+            else:
+                if scaler is not None:
+                    edge_attr = scaler.norm(data.edge_attr)
+                else: 
+                    edge_attr = data.edge_attr
+
+                target = data.pdos
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                loss = metric(output_pdos, target)
+                loss_item = loss.item()
+                pdos_mse = loss.item()
+                cdf_mse = metric(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
 
         running_loss += loss_item
         running_pdos_rmse += pdos_mse
@@ -308,6 +339,7 @@ def validation(model: ProDosNet,
                use_cuda: bool = False, 
                use_cdf: bool = False, 
                test: bool = False, 
+               train_on_dos: bool = False,
                scaler: Scaler = None) -> Tuple[float, float, float]:
     """
         Runs model predictions on validation or test set and returns loss and errors
@@ -362,35 +394,64 @@ def validation(model: ProDosNet,
             device = torch.device('cuda')
             data = data.to(device)
 
-        if use_cdf: 
+        if train_on_dos:
+            if use_cdf: 
+                if scaler is not None:
+                    edge_attr = scaler.norm(data.edge_attr)
+                else: 
+                    edge_attr = data.edge_attr
 
-            if scaler is not None:
-                edge_attr = scaler.norm(data.edge_attr)
-            else: 
-                edge_attr = data.edge_attr
-                
-            target = data.pdos_cdf
-            output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-            loss = metric(output_pdos, target)
-            loss_item = loss.item()
-            cdf_mse = mse_loss(output_pdos, target).item()
-            output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
-            output_pdos_diff[output_pdos_diff<0] = 0.0
-            target_pdos_diff = torch.diff(target, dim=1)/e_diff
-            pdos_mse = mse_loss(output_pdos_diff, target_pdos_diff).item()
+                target = data.dos_cdf
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                loss = metric(output_dos, target)
+                loss_item = loss.item()
+                cdf_mse = mse_loss(output_dos, target).item()
+                output_dos_diff = torch.diff(output_dos, dim=1)/e_diff
+                output_dos_diff[output_dos_diff<0] = 0.0
+                pdos_mse = mse_loss(output_dos_diff, (torch.diff(target, dim=1)/e_diff)).item()
+
+            else:
+                if scaler is not None:
+                    edge_attr = scaler.norm(data.edge_attr)
+                else: 
+                    edge_attr = data.edge_attr
+
+                target = data.dos
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                loss = metric(output_dos, target)
+                loss_item = loss.item()
+                pdos_mse = loss.item()
+                cdf_mse = metric(torch.cumsum(output_dos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
 
         else:
-            if scaler is not None:
-                edge_attr = scaler.norm(data.edge_attr)
-            else: 
-                edge_attr = data.edge_attr
+            if use_cdf: 
+                if scaler is not None:
+                    edge_attr = scaler.norm(data.edge_attr)
+                else: 
+                    edge_attr = data.edge_attr
+                    
+                target = data.pdos_cdf
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                loss = metric(output_pdos, target)
+                loss_item = loss.item()
+                cdf_mse = mse_loss(output_pdos, target).item()
+                output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
+                output_pdos_diff[output_pdos_diff<0] = 0.0
+                target_pdos_diff = torch.diff(target, dim=1)/e_diff
+                pdos_mse = mse_loss(output_pdos_diff, target_pdos_diff).item()
 
-            target = data.pdos
-            output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-            loss = metric(output_pdos, target)
-            loss_item = loss.item()
-            pdos_mse = loss.item()
-            cdf_mse = mse_loss(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
+            else:
+                if scaler is not None:
+                    edge_attr = scaler.norm(data.edge_attr)
+                else: 
+                    edge_attr = data.edge_attr
+
+                target = data.pdos
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                loss = metric(output_pdos, target)
+                loss_item = loss.item()
+                pdos_mse = loss.item()
+                cdf_mse = mse_loss(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
 
         running_loss += loss_item
         running_pdos_rmse += pdos_mse
@@ -490,7 +551,7 @@ def validation(model: ProDosNet,
     epoch_pdos_rmse = running_pdos_rmse/n_iter
     epoch_cdf_pdos_rmse = running_cdf_pdos_rmse/n_iter
 
-    if epoch % 50 == 0:
+    if save_id_rmse and epoch%save_id_rmse_interv == 0:
         id_error_total_df = pd.concat(id_error_df_list)
         id_error_total_df.to_csv('test_outputs/%s/'%save_path + f"orbital_rmse_epoch_{epoch}_fold_{fold}.csv", index=False)
     
