@@ -10,7 +10,7 @@ from torch_geometric.typing import PairTensor, Adj, OptTensor, Size
 
 class CrystalGraphConv(MessagePassing):
     def __init__(self, nbr_fea_len, l1, l2, use_cdf, atom_fea_len=64,
-                 aggr: str = 'mean', bias: bool = True, **kwargs):
+                 aggr: str = 'add', bias: bool = True, **kwargs):
         super(CrystalGraphConv, self).__init__(aggr=aggr, flow='target_to_source', **kwargs)
         self.use_cdf = use_cdf
         self.atom_fea_len = atom_fea_len
