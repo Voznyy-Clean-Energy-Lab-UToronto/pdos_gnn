@@ -89,13 +89,13 @@ def run_cross_validation(config: dict, args, save_path: str):
             training_distances.append(torch.flatten(data.edge_attr))
             train_mp_ids.extend(data.material_id)
         train_mp_ids_df = pd.DataFrame({"train_ids": train_mp_ids})
-        train_mp_ids_df.to_csv(f'test_outputs/{save_path}/train_ids_fold_{fold+1}.csv', index=False)
+        train_mp_ids_df.to_csv(f'{save_path}/train_ids_fold_{fold+1}.csv', index=False)
 
         val_mp_ids = []
         for data in validation_loader:
             val_mp_ids.extend(data.material_id)
         val_mp_ids_df = pd.DataFrame({"val_ids": val_mp_ids})
-        val_mp_ids_df.to_csv(f'test_outputs/{save_path}/val_ids_fold_{fold+1}.csv', index=False)
+        val_mp_ids_df.to_csv(f'{save_path}/val_ids_fold_{fold+1}.csv', index=False)
 
         # Create a Scaler for bond distances 
         if args.scale:
@@ -193,7 +193,7 @@ def run_cross_validation(config: dict, args, save_path: str):
             print("--------------------------- Fold {} --------------------------".format(fold+1))
             validation_subsampler = torch.utils.data.SubsetRandomSampler(val_ids)
             validation_loader = DataLoader(dataset, batch_size=args.batch_size, sampler=validation_subsampler)
-            best_model = torch.load('test_outputs/{}/checkpoint_fold_{}_best.pth.tar'.format(save_path, fold+1), map_location=torch.device('cpu'))
+            best_model = torch.load('{}/checkpoint_fold_{}_best.pth.tar'.format(save_path, fold+1), map_location=torch.device('cpu'))
             model.load_state_dict(best_model['state_dict'])
             optimizer.load_state_dict(best_model['optimizer'])
             if args.cuda:
@@ -215,12 +215,12 @@ def run_test(args, save_path: str, test_loader: DataLoader, model: ProDosNet):
             device = torch.device("cuda")
             model.to(device)
     test_loss, test_pdos_rmse, test_cdf_pdos_rmse = validation(
-                model, metric, epoch=0, fold=None, save_path=save_path, validation_loader=test_loader, train_on_dos=args.train_on_dos, train_on_atomic_dos=args.train_on_atomic_dos, save_output=True, save_dos=args.save_dos, save_pdos=args.save_pdos, use_cuda=args.cuda, use_cdf=args.use_cdf, test=True)
+                model, metric, epoch=0, fold=None, save_path=save_path, validation_loader=test_loader, train_on_dos=args.train_on_dos, save_output=False, save_dos=args.save_dos, save_pdos=args.save_pdos, use_cuda=args.cuda, use_cdf=args.use_cdf, test=True)
     error_type_list = ["Test loss", "Test PDOS RMSE", "Test CDF PDOS RMSE"]
     errors = [test_loss, test_pdos_rmse, test_cdf_pdos_rmse]
     results_dict =  {"Error type": error_type_list, "Mean errors": errors}
     result_df = pd.DataFrame(data=results_dict)
-    result_df.to_csv("test_outputs/%s/results.csv"%save_path, sep='\t')
+    result_df.to_csv("%s/results.csv"%save_path, sep='\t')
 
     print("------------------------- Test Results ------------------------- \n")
     with pd.option_context('display.max_rows', None, 'display.max_columns', None):
@@ -420,7 +420,7 @@ def validation(model: ProDosNet,
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
                 loss = metric(output_dos, target)
                 loss_item = loss.item()
-                pdos_mse = loss.item()
+                pdos_mse = mse_loss(output_dos, target).item()
                 cdf_mse = metric(torch.cumsum(output_dos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
 
         else:
@@ -533,8 +533,8 @@ def validation(model: ProDosNet,
         if test:
             filename = f'test_output_total_dos.csv'
             filename_cdf = f'test_output_total_dos_cdf.csv'
-        total_output_dos.to_csv('test_outputs/%s/'%save_path + filename, header=False, index=False)
-        total_output_dos_cdf.to_csv('test_outputs/%s/'%save_path + filename_cdf, header=False, index=False)
+        total_output_dos.to_csv('%s/'%save_path + filename, header=False, index=False)
+        total_output_dos_cdf.to_csv('%s/'%save_path + filename_cdf, header=False, index=False)
 
     if save_pdos:
         total_output_pdos = pd.concat(save_pdos_list)
@@ -544,8 +544,8 @@ def validation(model: ProDosNet,
         if test:
             filename = f'test_output_pdos.csv'
             filename_cdf = f'test_output_pdos_cdf.csv'
-        total_output_pdos.to_csv('test_outputs/%s/'%save_path + filename, header=False, index=False)
-        total_output_pdos_cdf.to_csv('test_outputs/%s/'%save_path + filename_cdf, header=False, index=False)
+        total_output_pdos.to_csv('%s/'%save_path + filename, header=False, index=False)
+        total_output_pdos_cdf.to_csv('%s/'%save_path + filename_cdf, header=False, index=False)
 
     epoch_loss = running_loss/n_iter
     epoch_pdos_rmse = running_pdos_rmse/n_iter
@@ -553,6 +553,6 @@ def validation(model: ProDosNet,
 
     if save_id_rmse and epoch%save_id_rmse_interv == 0:
         id_error_total_df = pd.concat(id_error_df_list)
-        id_error_total_df.to_csv('test_outputs/%s/'%save_path + f"orbital_rmse_epoch_{epoch}_fold_{fold}.csv", index=False)
+        id_error_total_df.to_csv('%s/'%save_path + f"orbital_rmse_epoch_{epoch}_fold_{fold}.csv", index=False)
     
     return epoch_loss, epoch_pdos_rmse, epoch_cdf_pdos_rmse
