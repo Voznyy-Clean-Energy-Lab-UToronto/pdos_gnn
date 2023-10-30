@@ -24,7 +24,7 @@ In this work, we developed a Graph Neural Network (GNN) ProDosNet which is train
 ## Run locally
 1. Preprocess data for training from raw Materials Project PDOS
   - `python main.py --task preprocess  --preprocess_ids path/to/ids.csv --cif_dir path/to/cif_files --dos_dir path/to/raw_dos_files`
-3. Run training
+2. Run training
   - `python main.py --task cross_val  --train_ids path/to/train_ids.csv --data_file path/to/processed_data.tar`
-4. Predict using a pre-trained model
+3. Predict using a pre-trained model
   - `python main.py --task test  --test_ids path/to/test_ids.csv --data_file path/to/processed_data.tar --model path/to/pretrained_pdos_model.pth.tar`
