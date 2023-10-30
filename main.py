@@ -20,9 +20,13 @@ def main(args):
     torch.manual_seed(42)
 
     args.cuda = torch.cuda.is_available()
-    save_path = str(date.today())+'_'+args.name
-    if not os.path.exists('test_outputs/%s' % save_path):
-        os.makedirs('test_outputs/%s' % save_path)
+    if args.save_path is None:
+        save_path = 'test_outputs/'+str(date.today())+'_'+args.name
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+    else:
+        save_path = args.save_path
+        assert os.path.exists(save_path), print("Please, provide a valid save_path")
 
     # If task is preprocess, run data preprocessing 
     if args.task == "preprocess":
@@ -155,6 +159,9 @@ if __name__ == '__main__':
 
     parser.add_argument("--data_file", default=None,
                         help="Provide dataset tar file name. Default: None")
+    
+    parser.add_argument("--save_path", default=None,
+                        help="Provide path where output will be saved. Default: None")
 
     parser.add_argument("--name", default="ProDosNet_experiment",
                         help="Provide experiment name. Default: ProDosNet_experiment")
@@ -216,7 +223,7 @@ if __name__ == '__main__':
     parser.add_argument("--lr", default=0.001, type=float, 
                         help="Provide learning rate value. Default: 0.001")
 
-    parser.add_argument("--n_conv", default=2, type=int,
+    parser.add_argument("--n_conv", default=3, type=int,
                         help="Provide number of graph convolution layers. Default: 2")
     
     parser.add_argument("--wd", default=0.0, type=float,
