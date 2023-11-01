@@ -135,7 +135,7 @@ def run_cross_validation(config: dict, args, save_path: str):
             for key, item in val_error_dict.items():
                 fold_training_curves_dict[key].append(item)
 
-            if epoch%10 == 0:
+            if epoch%args.model_save_interval == 0:
                 train_error_ws_dict = train_error_dict
                 train_error_ws_dict['model_weight_sum'] = total_weight_sum
                 error_df = pd.concat([pd.DataFrame.from_dict(train_error_ws_dict, orient='index', columns=[f'epoch_{epoch}']),
