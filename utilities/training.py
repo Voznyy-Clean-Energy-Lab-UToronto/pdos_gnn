@@ -13,9 +13,6 @@ from models.crystal_model import ProDosNet
 from torch.nn.functional import mse_loss
 from utilities.utils import save_model, save_training_curves, save_cv_results, print_output, plot_training_curve
 
-from typing import Tuple
-
-
 def run_cross_validation(config: dict, args, save_path: str):
     """
         Run k-fold cross-validation on training/validation dataset
@@ -35,12 +32,7 @@ def run_cross_validation(config: dict, args, save_path: str):
         print(f"Model {args.model_name} is not available")
         return None
 
-    fold_val_loss_list = []
-    fold_train_loss_list = []
-    fold_val_pdos_rmse_list = []
-    fold_train_pdos_rmse_list = []
-    fold_val_cdf_pdos_rmse_list = []
-    fold_train_cdf_pdos_rmse_list = []
+    cv_results_list = []
 
     print("------------------- Starting Cross-Validation ------------------ \n")
     print(" Running {}-fold cross-validation on {} data file \n".format(args.kfold, args.train_ids))
@@ -66,16 +58,24 @@ def run_cross_validation(config: dict, args, save_path: str):
 
         print("---------------------------- Fold {} ----------------------------".format(fold+1))
         
-        wieght_sum_list = []
 
-        val_loss_list = []
-        train_loss_list = []
-
-        val_pdos_rmse_list = []
-        train_pdos_rmse_list = []
-
-        val_cdf_pdos_rmse_list = []
-        train_cdf_pdos_rmse_list = []
+        fold_training_curves_dict = {'train_loss': [],
+                                     'val_loss': [],
+                                     'train_dos_mse': [],
+                                     'val_dos_mse': [],
+                                     'train_dos_mse_cdf': [],
+                                     'val_dos_mse_cdf': [],
+                                     'train_atomic_dos_mse': [],
+                                     'val_atomic_dos_mse': [],
+                                     'train_atomic_dos_mse_cdf': [],
+                                     'val_atomic_dos_mse_cdf': [],
+                                     'train_orbital_pdos_mse': [],
+                                     'val_orbital_pdos_mse': [],
+                                     'train_orbital_pdos_mse_cdf': [],
+                                     'val_orbital_pdos_mse_cdf': [],
+                                     'model_weight_sum': []}
+        
+        fold_results_df = pd.DataFrame({'error': list(fold_training_curves_dict.keys())})
 
         train_subsampler = torch.utils.data.SubsetRandomSampler(train_ids)
         validation_subsampler = torch.utils.data.SubsetRandomSampler(val_ids)
@@ -106,11 +106,62 @@ def run_cross_validation(config: dict, args, save_path: str):
         
         # Train the model
         for epoch in range(1, args.epochs+1):
-            train_loss, train_pdos_rmse, train_cdf_pdos_rmse = train(
-                model, optimizer, metric, train_loader, train_on_dos=args.train_on_dos, use_cuda=args.cuda, use_cdf=args.use_cdf, scaler=scaler)
-            val_loss, val_pdos_rmse, val_cdf_pdos_rmse = validation(
-                model, metric, epoch, fold, save_path, validation_loader, train_on_dos=args.train_on_dos, use_cuda=args.cuda, use_cdf=args.use_cdf, scaler=scaler)
-            print_output(epoch, train_loss, val_loss, train_pdos_rmse, val_pdos_rmse, train_cdf_pdos_rmse, val_cdf_pdos_rmse)
+            train_error_dict = train(model, 
+                                     optimizer, 
+                                     metric, 
+                                     train_loader, 
+                                     train_on_dos=args.train_on_dos, 
+                                     train_on_atomic_dos=args.train_on_atomic_dos,
+                                     use_cuda=args.cuda, 
+                                     use_cdf=args.use_cdf, 
+                                     scaler=scaler,
+                                     epoch=epoch)
+            
+            val_error_dict = validation(model, 
+                                        metric, 
+                                        epoch, 
+                                        fold, 
+                                        save_path, 
+                                        validation_loader, 
+                                        train_on_dos=args.train_on_dos, 
+                                        train_on_atomic_dos=args.train_on_atomic_dos,
+                                        use_cuda=args.cuda, 
+                                        use_cdf=args.use_cdf, 
+                                        scaler=scaler)
+            
+            for key, item in train_error_dict.items():
+                fold_training_curves_dict[key].append(item)
+
+            for key, item in val_error_dict.items():
+                fold_training_curves_dict[key].append(item)
+
+            if epoch%10 == 0:
+                train_error_ws_dict = train_error_dict
+                train_error_ws_dict['model_weight_sum'] = total_weight_sum
+                error_df = pd.concat([pd.DataFrame.from_dict(train_error_ws_dict, orient='index', columns=[f'epoch_{epoch}']),
+                                      pd.DataFrame.from_dict(val_error_dict, orient='index', columns=[f'epoch_{epoch}'])])
+                error_df['error'] = error_df.index
+                
+                min_error_list = [np.min(error_list) for _, error_list in fold_training_curves_dict.items()]
+                fold_results_df[f'min_error'] = min_error_list
+                fold_results_df[f'epoch_{epoch}'] = fold_results_df.merge(error_df, on='error', how='inner')[f'epoch_{epoch}']
+
+                fold_results_df.to_csv(f'{save_path}/results_fold_{fold}.csv', index=False)
+            
+            print_output(epoch, 
+                         train_error_dict['train_loss'], 
+                         val_error_dict['val_loss'], 
+                         train_error_dict['train_orbital_pdos_mse'], 
+                         val_error_dict['val_orbital_pdos_mse'], 
+                         train_error_dict['train_orbital_pdos_mse_cdf'], 
+                         val_error_dict['val_orbital_pdos_mse_cdf'])
+            
+            val_loss = val_error_dict['val_loss']
+            train_loss = train_error_dict['train_loss']
+            val_pdos_rmse = val_error_dict['val_orbital_pdos_mse']
+            train_pdos_rmse = train_error_dict['train_orbital_pdos_mse']
+            val_cdf_pdos_rmse = val_error_dict['val_orbital_pdos_mse_cdf']
+            train_cdf_pdos_rmse = train_error_dict['train_orbital_pdos_mse_cdf']
 
             n_parameters = 0
             layer_sum_list = []
@@ -119,15 +170,9 @@ def run_cross_validation(config: dict, args, save_path: str):
                 parameters_np = parameters.cpu().data.numpy()
                 layer_sum_list.append(np.sum(np.abs(parameters_np)))
             total_weight_sum = np.sum(layer_sum_list).item()/n_parameters
-            wieght_sum_list.append(total_weight_sum)
-       
-            val_loss_list.append(val_loss)
-            train_loss_list.append(train_loss)
-            val_pdos_rmse_list.append(val_pdos_rmse)
-            train_pdos_rmse_list.append(train_pdos_rmse)
-            val_cdf_pdos_rmse_list.append(val_cdf_pdos_rmse)
-            train_cdf_pdos_rmse_list.append(train_cdf_pdos_rmse)
 
+            fold_training_curves_dict['model_weight_sum'].append(total_weight_sum)
+       
             if epoch == 1:
                 best_val_loss = val_loss
                 best_train_loss = train_loss
@@ -157,34 +202,35 @@ def run_cross_validation(config: dict, args, save_path: str):
                         save_model(model_state_best, epoch, save_path, fold=fold, best=True)
 
             if args.plot_training and epoch % args.plot_interval == 0:
-                plot_training_curve(save_path, val_loss_list, train_loss_list, fold=fold+1)
+                plot_training_curve(save_path, val_loss_list=fold_training_curves_dict['val_loss'], train_loss_list=fold_training_curves_dict['train_loss'], fold=fold+1)
+
             if epoch % args.model_save_interval==0:
                 model_state = {'epoch': epoch, 'state_dict': model.state_dict(), 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss,
                                     'best_val_pdos_rmse': best_val_pdos_rmse, 'best_train_pdos_rmse': best_train_pdos_rmse, 'best_val_cdf_pdos_rmse': best_val_cdf_pdos_rmse, 'best_train_cdf_pdos_rmse': best_train_cdf_pdos_rmse, 'optimizer': optimizer.state_dict(), 'args': vars(args)}
                 save_model(model_state, epoch, save_path, fold)
 
-                training_curve_list = [val_loss_list, train_loss_list, val_pdos_rmse_list, train_pdos_rmse_list, val_cdf_pdos_rmse_list, train_cdf_pdos_rmse_list, wieght_sum_list]
-                training_curve_name_list = ["Val loss", "Train loss", "Val PDOS RMSE", "Train PDOS RMSE", "Val CDF PDOS RMSE", "Train CDF PDOS RMSE", "Weight Sum"]
-                save_training_curves(fold+1, training_curve_list, training_curve_name_list, save_path)
+                save_training_curves(fold+1, fold_training_curves_dict, save_path)
 
-        fold_val_loss_list.append(best_val_loss)
-        fold_train_loss_list.append(best_train_loss)
-        fold_val_pdos_rmse_list.append(best_val_pdos_rmse)
-        fold_train_pdos_rmse_list.append(best_train_pdos_rmse)
-        fold_val_cdf_pdos_rmse_list.append(best_val_cdf_pdos_rmse)
-        fold_train_cdf_pdos_rmse_list.append(best_train_cdf_pdos_rmse)
         
-        training_curve_list = [val_loss_list, train_loss_list, val_pdos_rmse_list, train_pdos_rmse_list, val_cdf_pdos_rmse_list, train_cdf_pdos_rmse_list, wieght_sum_list]
-        training_curve_name_list = ["Val loss", "Train loss", "Val PDOS RMSE", "Train PDOS RMSE", "Val CDF PDOS RMSE", "Train CDF PDOS RMSE", "Weight Sum"]
-        save_training_curves(fold+1, training_curve_list, training_curve_name_list, save_path)
+
+        
+        save_training_curves(fold+1, fold_training_curves_dict, save_path)
+        train_error_ws_dict = train_error_dict
+        train_error_ws_dict['model_weight_sum'] = total_weight_sum
+        error_df = pd.concat([pd.DataFrame.from_dict(train_error_ws_dict, orient='index', columns=[f'epoch_{epoch}']),
+                                pd.DataFrame.from_dict(val_error_dict, orient='index', columns=[f'epoch_{epoch}'])])
+        error_df['error'] = error_df.index
+        
+        min_error_list = [np.min(error_list) for _, error_list in fold_training_curves_dict.items()]
+        fold_results_df[f'min_error'] = min_error_list
+        fold_results_df[f'epoch_{epoch}'] = fold_results_df.merge(error_df, on='error', how='inner')[f'epoch_{epoch}']
+
+        fold_results_df.to_csv(f'{save_path}/results_fold_{fold}.csv', index=False)
 
 
     print("----------------- Finished Cross-Validation -----------------")
-    cv_lists = [fold_val_loss_list, fold_train_loss_list, fold_val_pdos_rmse_list, fold_train_pdos_rmse_list, fold_val_cdf_pdos_rmse_list, fold_train_cdf_pdos_rmse_list]
-    mean_list = [np.mean(list) for list in cv_lists]
-    std_list = [np.std(list) for list in cv_lists]
    
-    save_cv_results(args.kfold, training_curve_name_list, cv_lists, mean_list, std_list, save_path)
+    #save_cv_results(args.kfold, training_curve_name_list, cv_lists, mean_list, std_list, save_path)
 
     if args.save_dos or args.save_pdos:
         print("------------------- Saving Predicted PDOS -------------------")
@@ -199,8 +245,20 @@ def run_cross_validation(config: dict, args, save_path: str):
             if args.cuda:
                 device = torch.device("cuda")
                 model.to(device)
-            val_loss, val_pdos_rmse, val_cdf_pdos_rmse = validation(
-                model, metric, "best", fold, save_path, validation_loader, train_on_dos=args.train_on_dos, train_on_atomic_dos=args.train_on_atomic_dos, save_output=True, save_dos=args.save_dos, save_pdos=args.save_pdos, use_cuda=args.cuda, use_cdf=args.use_cdf, scaler=scaler)
+            val_error_dict = validation(model, 
+                                        metric, 
+                                        "best", 
+                                        fold, 
+                                        save_path,
+                                        validation_loader, 
+                                        train_on_dos=args.train_on_dos, 
+                                        train_on_atomic_dos=args.train_on_atomic_dos, 
+                                        save_output=True, 
+                                        save_dos=args.save_dos, 
+                                        save_pdos=args.save_pdos, 
+                                        use_cuda=args.cuda, 
+                                        use_cdf=args.use_cdf, 
+                                        scaler=scaler)
             if args.save_only_1_fold_val_pred:
                 break
         print("---------------- Finished Saving Predictions ----------------")
@@ -229,21 +287,27 @@ def run_test(args, save_path: str, test_loader: DataLoader, model: ProDosNet):
 
 
 
-def train(model: ProDosNet, 
-          optimizer: torch.optim, 
-          metric: nn.MSELoss, 
-          train_loader: DataLoader, 
+def train(model: ProDosNet = None,
+          optimizer: torch.optim = None,
+          metric: nn.MSELoss = None, 
+          train_loader: DataLoader = None, 
           use_cuda: bool = False, 
           use_cdf: bool = False, 
           train_on_dos: bool = False,
-          scaler: Scaler = None) -> Tuple[float, float, float]:
+          train_on_atomic_dos: bool = False,
+          scaler: Scaler = None,
+          epoch: int = None) -> dict[str, float]:
     
     model.train()
     
     n_iter = len(train_loader)
     running_loss = 0.0
-    running_pdos_rmse = 0.0
-    running_cdf_pdos_rmse = 0.0
+    running_dos_mse = 0.0
+    running_dos_mse_cdf = 0.0
+    running_atomic_dos_mse = 0.0
+    running_atomic_dos_mse_cdf = 0.0
+    running_orbital_pdos_mse = 0.0
+    running_orbital_pdos_mse_cdf = 0.0
 
     for batch_idx, data in enumerate(train_loader):
         e_diff = torch.mean(data.e_diff)
@@ -258,15 +322,30 @@ def train(model: ProDosNet,
                     edge_attr = scaler.norm(data.edge_attr)
                 else: 
                     edge_attr = data.edge_attr
-
-                target = data.dos_cdf
+                
+                target_dos = data.dos_cdf
+                target_atomic_dos = data.atomic_dos_cdf
+                target_orbital_pdos = data.pdos_cdf
+         
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-                loss = metric(output_dos, target)
+
+                loss = metric(output_dos, target_dos)
                 loss_item = loss.item()
-                cdf_mse = mse_loss(output_dos, target).item()
+                
                 output_dos_diff = torch.diff(output_dos, dim=1)/e_diff
                 output_dos_diff[output_dos_diff<0] = 0.0
-                pdos_mse = mse_loss(output_dos_diff, (torch.diff(target, dim=1)/e_diff)).item()
+                dos_mse = mse_loss(output_dos_diff, (torch.diff(target_dos, dim=1)/e_diff)).item()
+                dos_mse_cdf = mse_loss(output_dos, target_dos).item()
+
+                output_atomic_dos_diff = torch.diff(output_atomic_dos, dim=1)/e_diff
+                output_atomic_dos_diff[output_atomic_dos_diff<0] = 0.0
+                atomic_dos_mse = mse_loss(output_atomic_dos_diff, (torch.diff(target_atomic_dos, dim=1)/e_diff)).item()
+                atomic_dos_mse_cdf = mse_loss(output_atomic_dos, target_atomic_dos).item()
+
+                output_orbital_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
+                output_orbital_pdos_diff[output_orbital_pdos_diff<0] = 0.0
+                orbital_pdos_mse = mse_loss(output_orbital_pdos_diff, (torch.diff(target_orbital_pdos, dim=1)/e_diff)).item()
+                orbital_pdos_mse_cdf = mse_loss(output_pdos, target_orbital_pdos).item()
 
             else:
                 if scaler is not None:
@@ -274,12 +353,78 @@ def train(model: ProDosNet,
                 else: 
                     edge_attr = data.edge_attr
 
-                target = data.dos
+                target_dos = data.dos
+                target_atomic_dos = data.atomic_dos
+                target_orbital_pdos = data.pdos
+         
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-                loss = metric(output_dos, target)
+
+                loss = metric(output_dos, target_dos)
                 loss_item = loss.item()
-                pdos_mse = loss.item()
-                cdf_mse = metric(torch.cumsum(output_dos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
+            
+                dos_mse = mse_loss(output_dos, target_dos).item()
+                dos_mse_cdf = mse_loss(torch.cumsum(output_dos, dim=1)*e_diff, torch.cumsum(target_dos, dim=1)*e_diff).item()
+
+                atomic_dos_mse = mse_loss(output_atomic_dos, target_atomic_dos).item()
+                atomic_dos_mse_cdf = mse_loss(torch.cumsum(output_atomic_dos, dim=1)*e_diff, torch.cumsum(target_atomic_dos, dim=1)*e_diff).item()
+
+                orbital_pdos_mse = mse_loss(output_pdos, target_orbital_pdos).item()
+                orbital_pdos_mse_cdf = mse_loss(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target_orbital_pdos, dim=1)*e_diff).item()
+
+        elif train_on_atomic_dos:
+            if use_cdf: 
+                if scaler is not None:
+                    edge_attr = scaler.norm(data.edge_attr)
+                else: 
+                    edge_attr = data.edge_attr
+                
+                target_dos = data.dos_cdf
+                target_atomic_dos = data.atomic_dos_cdf
+                target_orbital_pdos = data.pdos_cdf
+         
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+
+                loss = metric(target_atomic_dos, output_atomic_dos)
+                loss_item = loss.item()
+                
+                output_dos_diff = torch.diff(output_dos, dim=1)/e_diff
+                output_dos_diff[output_dos_diff<0] = 0.0
+                dos_mse = mse_loss(output_dos_diff, (torch.diff(target_dos, dim=1)/e_diff)).item()
+                dos_mse_cdf = mse_loss(output_dos, target_dos).item()
+
+                output_atomic_dos_diff = torch.diff(output_atomic_dos, dim=1)/e_diff
+                output_atomic_dos_diff[output_atomic_dos_diff<0] = 0.0
+                atomic_dos_mse = mse_loss(output_atomic_dos_diff, (torch.diff(target_atomic_dos, dim=1)/e_diff)).item()
+                atomic_dos_mse_cdf = mse_loss(output_atomic_dos, target_atomic_dos).item()
+
+                output_orbital_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
+                output_orbital_pdos_diff[output_orbital_pdos_diff<0] = 0.0
+                orbital_pdos_mse = mse_loss(output_orbital_pdos_diff, (torch.diff(target_orbital_pdos, dim=1)/e_diff)).item()
+                orbital_pdos_mse_cdf = mse_loss(output_pdos, target_orbital_pdos).item()
+
+            else:
+                if scaler is not None:
+                    edge_attr = scaler.norm(data.edge_attr)
+                else: 
+                    edge_attr = data.edge_attr
+
+                target_dos = data.dos
+                target_atomic_dos = data.atomic_dos
+                target_orbital_pdos = data.pdos
+         
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+
+                loss = metric(target_atomic_dos, output_atomic_dos)
+                loss_item = loss.item()
+            
+                dos_mse = mse_loss(output_dos, target_dos).item()
+                dos_mse_cdf = mse_loss(torch.cumsum(output_dos, dim=1)*e_diff, torch.cumsum(target_dos, dim=1)*e_diff).item()
+
+                atomic_dos_mse = mse_loss(output_atomic_dos, target_atomic_dos).item()
+                atomic_dos_mse_cdf = mse_loss(torch.cumsum(output_atomic_dos, dim=1)*e_diff, torch.cumsum(target_atomic_dos, dim=1)*e_diff).item()
+
+                orbital_pdos_mse = mse_loss(output_pdos, target_orbital_pdos).item()
+                orbital_pdos_mse_cdf = mse_loss(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target_orbital_pdos, dim=1)*e_diff).item()
 
         else:
             if use_cdf: 
@@ -287,15 +432,30 @@ def train(model: ProDosNet,
                     edge_attr = scaler.norm(data.edge_attr)
                 else: 
                     edge_attr = data.edge_attr
-
-                target = data.pdos_cdf
+                
+                target_dos = data.dos_cdf
+                target_atomic_dos = data.atomic_dos_cdf
+                target_orbital_pdos = data.pdos_cdf
+         
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-                loss = metric(output_pdos, target)
+
+                loss = metric(target_atomic_dos, output_atomic_dos)
                 loss_item = loss.item()
-                cdf_mse = mse_loss(output_pdos, target).item()
-                output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
-                output_pdos_diff[output_pdos_diff<0] = 0.0
-                pdos_mse = mse_loss(output_pdos_diff, (torch.diff(target, dim=1)/e_diff)).item()
+                
+                output_dos_diff = torch.diff(output_dos, dim=1)/e_diff
+                output_dos_diff[output_dos_diff<0] = 0.0
+                dos_mse = mse_loss(output_dos_diff, (torch.diff(target_dos, dim=1)/e_diff)).item()
+                dos_mse_cdf = mse_loss(output_dos, target_dos).item()
+
+                output_atomic_dos_diff = torch.diff(output_atomic_dos, dim=1)/e_diff
+                output_atomic_dos_diff[output_atomic_dos_diff<0] = 0.0
+                atomic_dos_mse = mse_loss(output_atomic_dos_diff, (torch.diff(target_atomic_dos, dim=1)/e_diff)).item()
+                atomic_dos_mse_cdf = mse_loss(output_atomic_dos, target_atomic_dos).item()
+
+                output_orbital_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
+                output_orbital_pdos_diff[output_orbital_pdos_diff<0] = 0.0
+                orbital_pdos_mse = mse_loss(output_orbital_pdos_diff, (torch.diff(target_orbital_pdos, dim=1)/e_diff)).item()
+                orbital_pdos_mse_cdf = mse_loss(output_pdos, target_orbital_pdos).item()
 
             else:
                 if scaler is not None:
@@ -303,34 +463,66 @@ def train(model: ProDosNet,
                 else: 
                     edge_attr = data.edge_attr
 
-                target = data.pdos
+                target_dos = data.dos
+                target_atomic_dos = data.atomic_dos
+                target_orbital_pdos = data.pdos
+         
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-                loss = metric(output_pdos, target)
+
+                loss = metric(target_atomic_dos, output_atomic_dos)
                 loss_item = loss.item()
-                pdos_mse = loss.item()
-                cdf_mse = metric(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
+            
+                dos_mse = mse_loss(output_dos, target_dos).item()
+                dos_mse_cdf = mse_loss(torch.cumsum(output_dos, dim=1)*e_diff, torch.cumsum(target_dos, dim=1)*e_diff).item()
+
+                atomic_dos_mse = mse_loss(output_atomic_dos, target_atomic_dos).item()
+                atomic_dos_mse_cdf = mse_loss(torch.cumsum(output_atomic_dos, dim=1)*e_diff, torch.cumsum(target_atomic_dos, dim=1)*e_diff).item()
+
+                orbital_pdos_mse = mse_loss(output_pdos, target_orbital_pdos).item()
+                orbital_pdos_mse_cdf = mse_loss(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target_orbital_pdos, dim=1)*e_diff).item()
 
         running_loss += loss_item
-        running_pdos_rmse += pdos_mse
-        running_cdf_pdos_rmse += cdf_mse
+
+        running_dos_mse += dos_mse
+        running_dos_mse_cdf += dos_mse_cdf
+
+        running_atomic_dos_mse += atomic_dos_mse
+        running_atomic_dos_mse_cdf += atomic_dos_mse_cdf
+
+        running_orbital_pdos_mse += orbital_pdos_mse
+        running_orbital_pdos_mse_cdf += orbital_pdos_mse_cdf
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
     epoch_loss = running_loss/n_iter
-    epoch_pdos_rmse = running_pdos_rmse/n_iter
-    epoch_cdf_pdos_rmse = running_cdf_pdos_rmse/n_iter
+    epoch_dos_mse = running_dos_mse/n_iter
+    epoch_dos_mse_cdf = running_dos_mse_cdf/n_iter
 
-    return epoch_loss, epoch_pdos_rmse, epoch_cdf_pdos_rmse
+    epoch_atomic_dos_mse = running_atomic_dos_mse/n_iter
+    epoch_atomic_dos_mse_cdf = running_atomic_dos_mse_cdf/n_iter
+
+    epoch_orbital_pdos_mse = running_orbital_pdos_mse/n_iter
+    epoch_orbital_pdos_mse_cdf = running_orbital_pdos_mse_cdf/n_iter
+
+    error_dict = {'train_loss': epoch_loss,
+                  'train_dos_mse': epoch_dos_mse,
+                  'train_dos_mse_cdf': epoch_dos_mse_cdf,
+                  'train_atomic_dos_mse': epoch_atomic_dos_mse,
+                  'train_atomic_dos_mse_cdf': epoch_atomic_dos_mse_cdf,
+                  'train_orbital_pdos_mse': epoch_orbital_pdos_mse,
+                  'train_orbital_pdos_mse_cdf': epoch_orbital_pdos_mse_cdf}
+    
+    return error_dict
 
 
-def validation(model: ProDosNet,
-               metric: nn.MSELoss, 
-               epoch: int, 
-               fold: int, 
-               save_path: str, 
-               validation_loader: DataLoader, 
+def validation(model: ProDosNet = None,
+               metric: nn.MSELoss = None, 
+               epoch: int = None, 
+               fold: int = None, 
+               save_path: str = None, 
+               validation_loader: DataLoader = None, 
                save_output: bool = False,  
                save_dos: bool = False, 
                save_pdos: bool = False, 
@@ -340,7 +532,8 @@ def validation(model: ProDosNet,
                use_cdf: bool = False, 
                test: bool = False, 
                train_on_dos: bool = False,
-               scaler: Scaler = None) -> Tuple[float, float, float]:
+               train_on_atomic_dos: bool = False,
+               scaler: Scaler = None) -> dict[str, float]:
     """
         Runs model predictions on validation or test set and returns loss and errors
         ----------------------------------------------------------------------------
@@ -378,9 +571,13 @@ def validation(model: ProDosNet,
     n_iter = len(validation_loader)
 
     running_loss = 0.0
-    running_pdos_rmse = 0.0
-    running_cdf_pdos_rmse = 0.0
-
+    running_dos_mse = 0.0
+    running_dos_mse_cdf = 0.0
+    running_atomic_dos_mse = 0.0
+    running_atomic_dos_mse_cdf = 0.0
+    running_orbital_pdos_mse = 0.0
+    running_orbital_pdos_mse_cdf = 0.0
+    idx_batch = 0
     for data in tqdm(validation_loader, disable = not test):
         e_diff = torch.mean(data.e_diff)
 
@@ -400,15 +597,30 @@ def validation(model: ProDosNet,
                     edge_attr = scaler.norm(data.edge_attr)
                 else: 
                     edge_attr = data.edge_attr
-
-                target = data.dos_cdf
+                
+                target_dos = data.dos_cdf
+                target_atomic_dos = data.atomic_dos_cdf
+                target_orbital_pdos = data.pdos_cdf
+         
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-                loss = metric(output_dos, target)
+
+                loss = metric(output_dos, target_dos)
                 loss_item = loss.item()
-                cdf_mse = mse_loss(output_dos, target).item()
+                
                 output_dos_diff = torch.diff(output_dos, dim=1)/e_diff
                 output_dos_diff[output_dos_diff<0] = 0.0
-                pdos_mse = mse_loss(output_dos_diff, (torch.diff(target, dim=1)/e_diff)).item()
+                dos_mse = mse_loss(output_dos_diff, (torch.diff(target_dos, dim=1)/e_diff)).item()
+                dos_mse_cdf = mse_loss(output_dos, target_dos).item()
+
+                output_atomic_dos_diff = torch.diff(output_atomic_dos, dim=1)/e_diff
+                output_atomic_dos_diff[output_atomic_dos_diff<0] = 0.0
+                atomic_dos_mse = mse_loss(output_atomic_dos_diff, (torch.diff(target_atomic_dos, dim=1)/e_diff)).item()
+                atomic_dos_mse_cdf = mse_loss(output_atomic_dos, target_atomic_dos).item()
+
+                output_orbital_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
+                output_orbital_pdos_diff[output_orbital_pdos_diff<0] = 0.0
+                orbital_pdos_mse = mse_loss(output_orbital_pdos_diff, (torch.diff(target_orbital_pdos, dim=1)/e_diff)).item()
+                orbital_pdos_mse_cdf = mse_loss(output_pdos, target_orbital_pdos).item()
 
             else:
                 if scaler is not None:
@@ -416,12 +628,78 @@ def validation(model: ProDosNet,
                 else: 
                     edge_attr = data.edge_attr
 
-                target = data.dos
+                target_dos = data.dos
+                target_atomic_dos = data.atomic_dos
+                target_orbital_pdos = data.pdos
+         
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-                loss = metric(output_dos, target)
+
+                loss = metric(output_dos, target_dos)
                 loss_item = loss.item()
-                pdos_mse = mse_loss(output_dos, target).item()
-                cdf_mse = metric(torch.cumsum(output_dos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
+            
+                dos_mse = mse_loss(output_dos, target_dos).item()
+                dos_mse_cdf = mse_loss(torch.cumsum(output_dos, dim=1)*e_diff, torch.cumsum(target_dos, dim=1)*e_diff).item()
+
+                atomic_dos_mse = mse_loss(output_atomic_dos, target_atomic_dos).item()
+                atomic_dos_mse_cdf = mse_loss(torch.cumsum(output_atomic_dos, dim=1)*e_diff, torch.cumsum(target_atomic_dos, dim=1)*e_diff).item()
+
+                orbital_pdos_mse = mse_loss(output_pdos, target_orbital_pdos).item()
+                orbital_pdos_mse_cdf = mse_loss(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target_orbital_pdos, dim=1)*e_diff).item()
+
+        elif train_on_atomic_dos:
+            if use_cdf: 
+                if scaler is not None:
+                    edge_attr = scaler.norm(data.edge_attr)
+                else: 
+                    edge_attr = data.edge_attr
+                
+                target_dos = data.dos_cdf
+                target_atomic_dos = data.atomic_dos_cdf
+                target_orbital_pdos = data.pdos_cdf
+         
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+
+                loss = metric(target_atomic_dos, output_atomic_dos)
+                loss_item = loss.item()
+                
+                output_dos_diff = torch.diff(output_dos, dim=1)/e_diff
+                output_dos_diff[output_dos_diff<0] = 0.0
+                dos_mse = mse_loss(output_dos_diff, (torch.diff(target_dos, dim=1)/e_diff)).item()
+                dos_mse_cdf = mse_loss(output_dos, target_dos).item()
+
+                output_atomic_dos_diff = torch.diff(output_atomic_dos, dim=1)/e_diff
+                output_atomic_dos_diff[output_atomic_dos_diff<0] = 0.0
+                atomic_dos_mse = mse_loss(output_atomic_dos_diff, (torch.diff(target_atomic_dos, dim=1)/e_diff)).item()
+                atomic_dos_mse_cdf = mse_loss(output_atomic_dos, target_atomic_dos).item()
+
+                output_orbital_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
+                output_orbital_pdos_diff[output_orbital_pdos_diff<0] = 0.0
+                orbital_pdos_mse = mse_loss(output_orbital_pdos_diff, (torch.diff(target_orbital_pdos, dim=1)/e_diff)).item()
+                orbital_pdos_mse_cdf = mse_loss(output_pdos, target_orbital_pdos).item()
+
+            else:
+                if scaler is not None:
+                    edge_attr = scaler.norm(data.edge_attr)
+                else: 
+                    edge_attr = data.edge_attr
+
+                target_dos = data.dos
+                target_atomic_dos = data.atomic_dos
+                target_orbital_pdos = data.pdos
+         
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+
+                loss = metric(target_atomic_dos, output_atomic_dos)
+                loss_item = loss.item()
+            
+                dos_mse = mse_loss(output_dos, target_dos).item()
+                dos_mse_cdf = mse_loss(torch.cumsum(output_dos, dim=1)*e_diff, torch.cumsum(target_dos, dim=1)*e_diff).item()
+
+                atomic_dos_mse = mse_loss(output_atomic_dos, target_atomic_dos).item()
+                atomic_dos_mse_cdf = mse_loss(torch.cumsum(output_atomic_dos, dim=1)*e_diff, torch.cumsum(target_atomic_dos, dim=1)*e_diff).item()
+
+                orbital_pdos_mse = mse_loss(output_pdos, target_orbital_pdos).item()
+                orbital_pdos_mse_cdf = mse_loss(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target_orbital_pdos, dim=1)*e_diff).item()
 
         else:
             if use_cdf: 
@@ -429,33 +707,65 @@ def validation(model: ProDosNet,
                     edge_attr = scaler.norm(data.edge_attr)
                 else: 
                     edge_attr = data.edge_attr
-                    
-                target = data.pdos_cdf
+                
+                target_dos = data.dos_cdf
+                target_atomic_dos = data.atomic_dos_cdf
+                target_orbital_pdos = data.pdos_cdf
+         
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-                loss = metric(output_pdos, target)
-                loss_item = loss.item()
-                cdf_mse = mse_loss(output_pdos, target).item()
-                output_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
-                output_pdos_diff[output_pdos_diff<0] = 0.0
-                target_pdos_diff = torch.diff(target, dim=1)/e_diff
-                pdos_mse = mse_loss(output_pdos_diff, target_pdos_diff).item()
 
+                loss = metric(target_atomic_dos, output_atomic_dos)
+                loss_item = loss.item()
+                
+                output_dos_diff = torch.diff(output_dos, dim=1)/e_diff
+                output_dos_diff[output_dos_diff<0] = 0.0
+                dos_mse = mse_loss(output_dos_diff, (torch.diff(target_dos, dim=1)/e_diff)).item()
+                dos_mse_cdf = mse_loss(output_dos, target_dos).item()
+
+                output_atomic_dos_diff = torch.diff(output_atomic_dos, dim=1)/e_diff
+                output_atomic_dos_diff[output_atomic_dos_diff<0] = 0.0
+                atomic_dos_mse = mse_loss(output_atomic_dos_diff, (torch.diff(target_atomic_dos, dim=1)/e_diff)).item()
+                atomic_dos_mse_cdf = mse_loss(output_atomic_dos, target_atomic_dos).item()
+
+                output_orbital_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
+                output_orbital_pdos_diff[output_orbital_pdos_diff<0] = 0.0
+                orbital_pdos_mse = mse_loss(output_orbital_pdos_diff, (torch.diff(target_orbital_pdos, dim=1)/e_diff)).item()
+                orbital_pdos_mse_cdf = mse_loss(output_pdos, target_orbital_pdos).item()
+                   
             else:
                 if scaler is not None:
                     edge_attr = scaler.norm(data.edge_attr)
                 else: 
                     edge_attr = data.edge_attr
 
-                target = data.pdos
+                target_dos = data.dos
+                target_atomic_dos = data.atomic_dos
+                target_orbital_pdos = data.pdos
+         
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
-                loss = metric(output_pdos, target)
+
+                loss = metric(target_atomic_dos, output_atomic_dos)
                 loss_item = loss.item()
-                pdos_mse = loss.item()
-                cdf_mse = mse_loss(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target, dim=1)*e_diff).item()
+            
+                dos_mse = mse_loss(output_dos, target_dos).item()
+                dos_mse_cdf = mse_loss(torch.cumsum(output_dos, dim=1)*e_diff, torch.cumsum(target_dos, dim=1)*e_diff).item()
+
+                atomic_dos_mse = mse_loss(output_atomic_dos, target_atomic_dos).item()
+                atomic_dos_mse_cdf = mse_loss(torch.cumsum(output_atomic_dos, dim=1)*e_diff, torch.cumsum(target_atomic_dos, dim=1)*e_diff).item()
+
+                orbital_pdos_mse = mse_loss(output_pdos, target_orbital_pdos).item()
+                orbital_pdos_mse_cdf = mse_loss(torch.cumsum(output_pdos, dim=1)*e_diff, torch.cumsum(target_orbital_pdos, dim=1)*e_diff).item()
 
         running_loss += loss_item
-        running_pdos_rmse += pdos_mse
-        running_cdf_pdos_rmse += cdf_mse
+
+        running_dos_mse += dos_mse
+        running_dos_mse_cdf += dos_mse_cdf
+
+        running_atomic_dos_mse += atomic_dos_mse
+        running_atomic_dos_mse_cdf += atomic_dos_mse_cdf
+
+        running_orbital_pdos_mse += orbital_pdos_mse
+        running_orbital_pdos_mse_cdf += orbital_pdos_mse_cdf
         
         if save_id_rmse and epoch%save_id_rmse_interv == 0:
             ids_list = []
@@ -468,10 +778,15 @@ def validation(model: ProDosNet,
             orbital_types = list(itertools.chain.from_iterable(data.orbital_types))
 
             output_pdos_orb_cdf = output_pdos.reshape(len(ids_list), 256)
-            target_pdos_orb_cdf = target.reshape(len(ids_list), 256)
+            target_pdos_orb_cdf = target_orbital_pdos.reshape(len(ids_list), 256)
             rmse_orb_cdf = ((output_pdos_orb_cdf-target_pdos_orb_cdf)**2).sum(dim=1).sqrt().cpu().detach().numpy()
 
-            output_pdos_orb = output_pdos_diff.reshape(len(ids_list), 255)
+
+            output_orbital_pdos_diff = torch.diff(output_pdos, dim=1)/e_diff
+            output_orbital_pdos_diff[output_orbital_pdos_diff<0] = 0.0
+            target_pdos_diff = torch.diff(target_atomic_dos, dim=1)/e_diff
+            
+            output_pdos_orb = output_orbital_pdos_diff.reshape(len(ids_list), 255)
             target_pdos_orb = target_pdos_diff.reshape(len(ids_list), 255)
             rmse_orb = ((output_pdos_orb-target_pdos_orb)**2).sum(dim=1).sqrt().cpu().detach().numpy()
 
@@ -499,7 +814,7 @@ def validation(model: ProDosNet,
 
             if save_pdos:
                 if use_cdf:
-                    pdos_to_save = output_pdos_diff
+                    pdos_to_save = output_orbital_pdos_diff
                     pdos_to_save_cdf = output_pdos
                     target_pdos_cpu = target_pdos_diff.data.cpu()
                 else:
@@ -548,11 +863,25 @@ def validation(model: ProDosNet,
         total_output_pdos_cdf.to_csv('%s/'%save_path + filename_cdf, header=False, index=False)
 
     epoch_loss = running_loss/n_iter
-    epoch_pdos_rmse = running_pdos_rmse/n_iter
-    epoch_cdf_pdos_rmse = running_cdf_pdos_rmse/n_iter
+    epoch_dos_mse = running_dos_mse/n_iter
+    epoch_dos_mse_cdf = running_dos_mse_cdf/n_iter
+
+    epoch_atomic_dos_mse = running_atomic_dos_mse/n_iter
+    epoch_atomic_dos_mse_cdf = running_atomic_dos_mse_cdf/n_iter
+
+    epoch_orbital_pdos_mse = running_orbital_pdos_mse/n_iter
+    epoch_orbital_pdos_mse_cdf = running_orbital_pdos_mse_cdf/n_iter
+    
+    error_dict = {'val_loss': epoch_loss,
+                  'val_dos_mse': epoch_dos_mse,
+                  'val_dos_mse_cdf': epoch_dos_mse_cdf,
+                  'val_atomic_dos_mse': epoch_atomic_dos_mse,
+                  'val_atomic_dos_mse_cdf': epoch_atomic_dos_mse_cdf,
+                  'val_orbital_pdos_mse': epoch_orbital_pdos_mse,
+                  'val_orbital_pdos_mse_cdf': epoch_orbital_pdos_mse_cdf}
 
     if save_id_rmse and epoch%save_id_rmse_interv == 0:
         id_error_total_df = pd.concat(id_error_df_list)
         id_error_total_df.to_csv('%s/'%save_path + f"orbital_rmse_epoch_{epoch}_fold_{fold}.csv", index=False)
     
-    return epoch_loss, epoch_pdos_rmse, epoch_cdf_pdos_rmse
+    return error_dict
