@@ -47,10 +47,8 @@ class MaterialData(Dataset):
         size = int(atoms_batch.max().item() + 1)
         atomic_dos = scatter(target_pdos, atoms_batch, dim=0, dim_size=size, reduce='add')
         atomic_dos_cdf = torch.cumsum(atomic_dos, dim=1)
-        atomic_dos_cdf_inverse = torch.cumsum(torch.fliplr(atomic_dos), dim=1)
         material_graph.atomic_dos = atomic_dos
         material_graph.atomic_dos_cdf = atomic_dos_cdf
-        material_graph.atomic_dos_cdf_inverse = atomic_dos_cdf_inverse
         material_graph.atoms_batch = atoms_batch
 
         return material_graph
