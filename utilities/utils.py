@@ -1,13 +1,7 @@
-import os
 import json
 import torch
-import warnings
-import numpy as np
 import pandas as pd
-import torch.nn as nn
 import matplotlib.pyplot as plt
-from models.crystal_model import ProDosNet
-from typing import List
 
 
 class Scaler(object):
@@ -38,21 +32,20 @@ def save_model(state: dict, epoch: int, save_path: str = None, fold: int = None,
     """
 
     if fold is not None:
-        filename = f'test_outputs/%s/checkpoint_fold_{fold+1}_{epoch}.pth.tar' % save_path
+        filename = f'%s/checkpoint_fold_{fold+1}_{epoch}.pth.tar' % save_path
     else:
-        filename = f'test_outputs/%s/checkpoint_fold_{epoch}.pth.tar' % save_path
+        filename = f'%s/checkpoint_fold_{epoch}.pth.tar' % save_path
     if best:
         torch.save(state, filename.removesuffix(
             f"_{epoch}.pth.tar")+"_best"+".pth.tar")
     elif init:
-        torch.save(state, f'test_outputs/%s/model_init.pth.tar' % save_path)
+        torch.save(state, f'%s/model_init.pth.tar' % save_path)
     else:
         torch.save(state, filename)
 
 
-def save_training_curves(fold, training_curve_list, training_curve_name_list, save_path):
-    training_curves_dict = dict(zip(training_curve_name_list, training_curve_list))
-    with open('test_outputs/%s/training_curves_fold_%d.json' % (save_path, fold), 'w') as tc_file:
+def save_training_curves(fold, training_curves_dict, save_path):
+    with open('%s/training_curves_fold_%d.json' % (save_path, fold), 'w') as tc_file:
         json.dump(training_curves_dict, tc_file)
 
 
@@ -64,8 +57,8 @@ def save_cv_results(folds, error_type_list, cv_lists, mean_list, std_list, save_
     results_dict =  {"Error type": error_type_list, "Mean errors": mean_list, "Error standard deviation": std_list}
     result_df = pd.DataFrame(data=results_dict)
 
-    fold_df.to_csv("test_outputs/%s/fold_stats.csv"%save_path, sep='\t')
-    result_df.to_csv("test_outputs/%s/results.csv"%save_path, sep='\t')
+    fold_df.to_csv("%s/fold_stats.csv"%save_path, sep='\t')
+    result_df.to_csv("%s/results.csv"%save_path, sep='\t')
 
     with pd.option_context('display.max_rows', None, 'display.max_columns', None):
         print(" \n Total training results: ")
@@ -76,7 +69,7 @@ def print_output(epoch: int, train_loss: float, val_loss: float, train_pdos_rmse
     print("Epoch: {}, Train Loss: {:.4f}, Val Loss: {:.4f}, Train PDOS RMSE: {:.4f}, Val PDOS RMSE: {:.4f}, Train CDF PDOS RMSE: {:.4f}, Val CDF PDOS RMSE: {:.4f}".format(epoch, train_loss, val_loss, train_pdos_rmse, val_pdos_rmse, train_cdf_pdos_rmse, val_cdf_pdos_rmse))
 
 
-def plot_training_curve(save_path: str, val_loss_list: List, train_loss_list: List, fold: int):
+def plot_training_curve(save_path: str, val_loss_list: list, train_loss_list: list, fold: int):
     """
         Creats training curve plots for experiment metrics
         --------------------------------------------------
@@ -95,7 +88,7 @@ def plot_training_curve(save_path: str, val_loss_list: List, train_loss_list: Li
     plt.yscale('log')
     plt.legend(loc = 'best')
     plt.title("Training Curve", loc='center')
-    plt.savefig(f'test_outputs/%s/trainingcurve_fold_{fold}'%save_path + '.png')
+    plt.savefig(f'%s/trainingcurve_fold_{fold}'%save_path + '.png')
 
 def plot_output_distribution(data, data_pred, epoch):
     data = data.detach().numpy().flatten()
