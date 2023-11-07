@@ -470,7 +470,7 @@ def train(model: ProDosNet = None,
          
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
 
-                loss = metric(target_atomic_dos, output_atomic_dos)
+                loss = metric(target_orbital_pdos, output_pdos)
                 loss_item = loss.item()
             
                 dos_mse = mse_loss(output_dos, target_dos).item()
