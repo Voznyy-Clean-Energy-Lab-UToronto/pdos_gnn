@@ -274,7 +274,7 @@ def run_test(args, save_path: str, test_loader: DataLoader, model: ProDosNet):
             device = torch.device("cuda")
             model.to(device)
     test_loss, test_pdos_rmse, test_cdf_pdos_rmse = validation(
-                model, metric, epoch=0, fold=None, save_path=save_path, validation_loader=test_loader, train_on_dos=args.train_on_dos, save_output=False, save_dos=args.save_dos, save_pdos=args.save_pdos, use_cuda=args.cuda, use_cdf=args.use_cdf, test=True)
+                model, metric, epoch=0, fold=None, save_path=save_path, validation_loader=test_loader, train_on_dos=args.train_on_dos, save_output=False, save_dos=args.save_dos, save_pdos=args.save_pdos, use_cuda=args.cuda, use_cdf=args.use_cdf, train_on_atomic_dos=args.train_on_atomic_dos, test=True)
     error_type_list = ["Test loss", "Test PDOS RMSE", "Test CDF PDOS RMSE"]
     errors = [test_loss, test_pdos_rmse, test_cdf_pdos_rmse]
     results_dict =  {"Error type": error_type_list, "Mean errors": errors}
@@ -603,7 +603,7 @@ def validation(model: ProDosNet = None,
                 target_atomic_dos = data.atomic_dos_cdf
                 target_orbital_pdos = data.pdos_cdf
          
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
                 loss = metric(output_dos, target_dos)
                 loss_item = loss.item()
@@ -633,7 +633,7 @@ def validation(model: ProDosNet = None,
                 target_atomic_dos = data.atomic_dos
                 target_orbital_pdos = data.pdos
          
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
                 loss = metric(output_dos, target_dos)
                 loss_item = loss.item()
@@ -658,7 +658,7 @@ def validation(model: ProDosNet = None,
                 target_atomic_dos = data.atomic_dos_cdf
                 target_orbital_pdos = data.pdos_cdf
          
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
                 loss = metric(target_atomic_dos, output_atomic_dos)
                 loss_item = loss.item()
@@ -677,6 +677,18 @@ def validation(model: ProDosNet = None,
                 output_orbital_pdos_diff[output_orbital_pdos_diff<0] = 0.0
                 orbital_pdos_mse = mse_loss(output_orbital_pdos_diff, (torch.diff(target_orbital_pdos, dim=1)/e_diff)).item()
                 orbital_pdos_mse_cdf = mse_loss(output_pdos, target_orbital_pdos).item()
+                # e = np.linspace(-20, 10, 256)
+                # fig = plt.figure()
+                # plt.plot(e, output_dos[0].detach().numpy(), label=f'DOS CDF MSE: {dos_mse_cdf}')
+                # plt.plot(e, output_dos[0].detach().numpy()/2, label=f'DOS CDF MSE: {dos_mse_cdf}')
+                # plt.plot(e, target_dos[0].detach().numpy())
+                # plt.legend()
+                # plt.show()
+                # fig = plt.figure()
+                # plt.plot(e[1:], output_dos_diff[0].detach().numpy(), label=f'DOS MSE: {dos_mse}')
+                # plt.plot(e[1:], (torch.diff(target_dos, dim=1)/e_diff)[0].detach().numpy())
+                # plt.legend()
+                # plt.show()
 
             else:
                 if scaler is not None:
@@ -688,7 +700,7 @@ def validation(model: ProDosNet = None,
                 target_atomic_dos = data.atomic_dos
                 target_orbital_pdos = data.pdos
          
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
                 loss = metric(target_atomic_dos, output_atomic_dos)
                 loss_item = loss.item()
@@ -713,7 +725,7 @@ def validation(model: ProDosNet = None,
                 target_atomic_dos = data.atomic_dos_cdf
                 target_orbital_pdos = data.pdos_cdf
          
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=True)
 
                 loss = metric(target_orbital_pdos, output_pdos)
                 loss_item = loss.item()
@@ -754,7 +766,7 @@ def validation(model: ProDosNet = None,
                 target_atomic_dos = data.atomic_dos
                 target_orbital_pdos = data.pdos
          
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=True)
 
                 loss = metric(target_orbital_pdos, output_pdos)
                 loss_item = loss.item()
