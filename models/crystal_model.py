@@ -48,7 +48,7 @@ class CrystalGraphConv(MessagePassing):
 class ProDosNet(nn.Module):
 
     def __init__(self, orig_atom_fea_len, nbr_fea_len,
-                 atom_fea_len=64, n_conv=3, h_fea_len=128, n_h=1, l1=256, l2=256, grid=256, n_orbitals=9, use_mlp=True, use_cdf=False):
+                 atom_fea_len=64, n_conv=3, h_fea_len=128, n_h=1, l1=256, l2=256, grid=256, n_orbitals=9, use_mlp=True, use_cdf=False,):
         super(ProDosNet, self).__init__()
         self.l1 = l1
         self.l2 = l2
@@ -72,7 +72,7 @@ class ProDosNet(nn.Module):
         self.dropout_2 = nn.Dropout(p=0.2)
 
 
-    def forward(self, node_fea, edge_index, edge_attr, batch, atoms_batch): 
+    def forward(self, node_fea, edge_index, edge_attr, batch, atoms_batch, use_cdf=False, train_on_pdos=False): 
         node_fea = self.embedding_1(node_fea)
         node_fea = self.embed_softplus(node_fea)
         node_fea = self.embedding_2(node_fea)
@@ -81,11 +81,14 @@ class ProDosNet(nn.Module):
         for i, conv_func in enumerate(self.convs):
             node_fea = conv_func(x=node_fea, edge_index=edge_index, edge_attr=edge_attr)
 
-        node_fea = self.conv_to_fc_softplus(self.fc_out_1(node_fea))
-        node_fea = self.dropout_1(node_fea)
-        node_fea = self.conv_to_fc_softplus(self.fc_out_2(node_fea))
-        node_fea = self.dropout_2(node_fea)
-        pdos = self.conv_to_fc_sigmoid(self.fc_out_3(node_fea))
+        if not use_cdf and train_on_pdos:
+            pdos = self.conv_to_fc_sigmoid(self.conv_to_fc(node_fea))
+        else:
+            node_fea = self.conv_to_fc_softplus(self.fc_out_1(node_fea))
+            node_fea = self.dropout_1(node_fea)
+            node_fea = self.conv_to_fc_softplus(self.fc_out_2(node_fea))
+            node_fea = self.dropout_2(node_fea)
+            pdos = self.conv_to_fc_sigmoid(self.fc_out_3(node_fea))
         
         dos = gsp(pdos, batch)
         dos = torch.split(dos, self.grid, 1)

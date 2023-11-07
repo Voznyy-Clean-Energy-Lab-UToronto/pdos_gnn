@@ -12,7 +12,7 @@ from torch_geometric.loader import DataLoader
 from models.crystal_model import ProDosNet
 from torch.nn.functional import mse_loss
 from utilities.utils import save_model, save_training_curves, save_cv_results, print_output, plot_training_curve
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 def run_cross_validation(config: dict, args, save_path: str):
     """
@@ -328,7 +328,7 @@ def train(model: ProDosNet = None,
                 target_atomic_dos = data.atomic_dos_cdf
                 target_orbital_pdos = data.pdos_cdf
          
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
                 loss = metric(output_dos, target_dos)
                 loss_item = loss.item()
@@ -358,7 +358,7 @@ def train(model: ProDosNet = None,
                 target_atomic_dos = data.atomic_dos
                 target_orbital_pdos = data.pdos
          
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
                 loss = metric(output_dos, target_dos)
                 loss_item = loss.item()
@@ -383,7 +383,7 @@ def train(model: ProDosNet = None,
                 target_atomic_dos = data.atomic_dos_cdf
                 target_orbital_pdos = data.pdos_cdf
          
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
                 loss = metric(target_atomic_dos, output_atomic_dos)
                 loss_item = loss.item()
@@ -413,7 +413,7 @@ def train(model: ProDosNet = None,
                 target_atomic_dos = data.atomic_dos
                 target_orbital_pdos = data.pdos
          
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
                 loss = metric(target_atomic_dos, output_atomic_dos)
                 loss_item = loss.item()
@@ -438,7 +438,7 @@ def train(model: ProDosNet = None,
                 target_atomic_dos = data.atomic_dos_cdf
                 target_orbital_pdos = data.pdos_cdf
          
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=True)
 
                 loss = metric(target_orbital_pdos, output_pdos)
                 loss_item = loss.item()
@@ -468,7 +468,7 @@ def train(model: ProDosNet = None,
                 target_atomic_dos = data.atomic_dos
                 target_orbital_pdos = data.pdos
          
-                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch)
+                output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=True)
 
                 loss = metric(target_orbital_pdos, output_pdos)
                 loss_item = loss.item()
