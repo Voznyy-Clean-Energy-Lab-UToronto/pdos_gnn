@@ -330,7 +330,7 @@ def train(model: ProDosNet = None,
          
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
-                loss = metric(output_dos, target_dos)
+                loss = metric(torch.div(output_dos, torch.max(target_dos, dim=1)[0]), torch.div(target_dos, torch.max(target_dos, dim=1)[0]))
                 loss_item = loss.item()
                 
                 output_dos_diff = torch.diff(output_dos, dim=1)/e_diff
@@ -360,7 +360,7 @@ def train(model: ProDosNet = None,
          
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
-                loss = metric(output_dos, target_dos)
+                loss = metric(torch.div(output_dos, torch.max(target_dos, dim=1)[0]), torch.div(target_dos, torch.max(target_dos, dim=1)[0]))
                 loss_item = loss.item()
             
                 dos_mse = mse_loss(output_dos, target_dos).item()
