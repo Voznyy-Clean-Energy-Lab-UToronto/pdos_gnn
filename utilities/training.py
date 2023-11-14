@@ -330,13 +330,13 @@ def train(model: ProDosNet = None,
          
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
-                loss = metric(torch.div(output_dos, torch.max(target_dos, dim=1)[0]), torch.div(target_dos, torch.max(target_dos, dim=1)[0]))
+                loss = metric(output_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1), target_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1))
                 loss_item = loss.item()
                 
                 output_dos_diff = torch.diff(output_dos, dim=1)/e_diff
                 output_dos_diff[output_dos_diff<0] = 0.0
                 dos_mse = mse_loss(output_dos_diff, (torch.diff(target_dos, dim=1)/e_diff)).item()
-                dos_mse_cdf = mse_loss(torch.div(output_dos, torch.max(target_dos, dim=1)[0], dim=1), torch.div(target_dos, torch.max(target_dos, dim=1)[0], dim=1)).item()
+                dos_mse_cdf = mse_loss(output_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1), target_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1)).item()
 
                 output_atomic_dos_diff = torch.diff(output_atomic_dos, dim=1)/e_diff
                 output_atomic_dos_diff[output_atomic_dos_diff<0] = 0.0
@@ -360,14 +360,14 @@ def train(model: ProDosNet = None,
          
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
-                loss = metric(torch.div(output_dos, torch.max(target_dos, dim=1)[0]), torch.div(target_dos, torch.max(target_dos, dim=1)[0]))
+                loss = metric(output_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1), target_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1))
                 loss_item = loss.item()
             
                 dos_mse = mse_loss(output_dos, target_dos).item()
 
                 output_dos_cdf = torch.cumsum(output_dos, dim=1)*e_diff
                 target_dos_cdf = torch.cumsum(target_dos, dim=1)*e_diff
-                dos_mse_cdf = mse_loss(torch.div(output_dos_cdf, torch.max(target_dos_cdf, dim=1)[0]), torch.div(target_dos_cdf, torch.max(target_dos_cdf, dim=1)[0])).item()
+                dos_mse_cdf = mse_loss(output_dos_cdf/torch.max(target_dos_cdf, dim=1)[0].unsqueeze(1), target_dos_cdf/torch.max(target_dos_cdf, dim=1)[0].unsqueeze(1)).item()
 
                 atomic_dos_mse = mse_loss(output_atomic_dos, target_atomic_dos).item()
                 atomic_dos_mse_cdf = mse_loss(torch.cumsum(output_atomic_dos, dim=1)*e_diff, torch.cumsum(target_atomic_dos, dim=1)*e_diff).item()
@@ -608,13 +608,13 @@ def validation(model: ProDosNet = None,
          
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
-                loss = metric(torch.div(output_dos, torch.max(target_dos, dim=1)[0], dim=1), torch.div(target_dos, torch.max(target_dos, dim=1)[0]), dim=1)
+                loss = metric(output_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1), target_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1))
                 loss_item = loss.item()
                 
                 output_dos_diff = torch.diff(output_dos, dim=1)/e_diff
                 output_dos_diff[output_dos_diff<0] = 0.0
                 dos_mse = mse_loss(output_dos_diff, (torch.diff(target_dos, dim=1)/e_diff)).item()
-                dos_mse_cdf = mse_loss(torch.div(output_dos, torch.max(target_dos, dim=1)[0], dim=1), torch.div(target_dos, torch.max(target_dos, dim=1)[0], dim=1)).item()
+                dos_mse_cdf = mse_loss(output_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1), target_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1)).item()
 
                 output_atomic_dos_diff = torch.diff(output_atomic_dos, dim=1)/e_diff
                 output_atomic_dos_diff[output_atomic_dos_diff<0] = 0.0
@@ -627,8 +627,8 @@ def validation(model: ProDosNet = None,
                 orbital_pdos_mse_cdf = mse_loss(output_pdos, target_orbital_pdos).item()
                 # e = np.linspace(-20, 10, 256)
                 # fig = plt.figure()
-                # plt.plot(e, torch.div(output_dos, torch.max(target_dos, dim=1)[0])[0].detach().numpy(), label=f'DOS CDF MSE: {dos_mse_cdf}')
-                # plt.plot(e, torch.div(target_dos, torch.max(target_dos, dim=1)[0])[0].detach().numpy())
+                # plt.plot(e, (output_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1))[0].detach().numpy(), label=f'DOS CDF MSE: {dos_mse_cdf}')
+                # plt.plot(e, (target_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1))[0].detach().numpy())
                 # plt.legend()
                 # plt.show()
                 # fig = plt.figure()
@@ -649,14 +649,14 @@ def validation(model: ProDosNet = None,
          
                 output_pdos, output_atomic_dos, output_dos = model(data.x, data.edge_index, edge_attr, data.batch, data.atoms_batch, use_cdf=use_cdf, train_on_pdos=False)
 
-                loss = metric(torch.div(output_dos, torch.max(target_dos, dim=1)[0], dim=1), torch.div(target_dos, torch.max(target_dos, dim=1)[0], dim=1))
+                loss = metric(output_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1), target_dos/torch.max(target_dos, dim=1)[0].unsqueeze(1))
                 loss_item = loss.item()
             
                 dos_mse = mse_loss(output_dos, target_dos).item()
                 
                 output_dos_cdf = torch.cumsum(output_dos, dim=1)*e_diff
                 target_dos_cdf = torch.cumsum(target_dos, dim=1)*e_diff
-                dos_mse_cdf = mse_loss(torch.div(output_dos_cdf, torch.max(target_dos_cdf, dim=1)[0], dim=1), torch.div(target_dos_cdf, torch.max(target_dos_cdf, dim=1)[0]), dim=1).item()
+                dos_mse_cdf = mse_loss(output_dos_cdf/torch.max(target_dos_cdf, dim=1)[0].unsqueeze(1), target_dos_cdf/torch.max(target_dos_cdf, dim=1)[0].unsqueeze(1)).item()
 
                 atomic_dos_mse = mse_loss(output_atomic_dos, target_atomic_dos).item()
                 atomic_dos_mse_cdf = mse_loss(torch.cumsum(output_atomic_dos, dim=1)*e_diff, torch.cumsum(target_atomic_dos, dim=1)*e_diff).item()
