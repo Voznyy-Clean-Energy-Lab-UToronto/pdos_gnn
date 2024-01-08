@@ -147,7 +147,7 @@ def run_cross_validation(config: dict, args, save_path: str):
                 fold_results_df[f'min_error'] = min_error_list
                 fold_results_df[f'epoch_{epoch}'] = fold_results_df.merge(error_df, on='error', how='inner')[f'epoch_{epoch}']
 
-                fold_results_df.to_csv(f'{save_path}/results_fold_{fold}.csv', index=False)
+                fold_results_df.to_csv(f'{save_path}/results_fold_{fold+1}.csv', index=False)
             
             print_output(epoch, 
                          train_error_dict['train_loss'], 
@@ -216,17 +216,6 @@ def run_cross_validation(config: dict, args, save_path: str):
 
         
         save_training_curves(fold+1, fold_training_curves_dict, save_path)
-        train_error_ws_dict = train_error_dict
-        train_error_ws_dict['model_weight_sum'] = total_weight_sum
-        error_df = pd.concat([pd.DataFrame.from_dict(train_error_ws_dict, orient='index', columns=[f'epoch_{epoch}']),
-                                pd.DataFrame.from_dict(val_error_dict, orient='index', columns=[f'epoch_{epoch}'])])
-        error_df['error'] = error_df.index
-        
-        min_error_list = [np.min(error_list) for _, error_list in fold_training_curves_dict.items()]
-        fold_results_df[f'min_error'] = min_error_list
-        fold_results_df[f'epoch_{epoch}'] = fold_results_df.merge(error_df, on='error', how='inner')[f'epoch_{epoch}']
-
-        fold_results_df.to_csv(f'{save_path}/results_fold_{fold}.csv', index=False)
 
 
     print("----------------- Finished Cross-Validation -----------------")
