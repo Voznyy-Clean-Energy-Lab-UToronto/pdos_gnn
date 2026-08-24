@@ -1,30 +1,69 @@
-# Graph Neural Network for Projected Density of States Prediction 
+# ProDosNet: Navigating the Materials Space with ML-Generated Electronic Fingerprints
 
-In this work, we developed a Graph Neural Network (GNN) ProDosNet which is trained on orbital Projected Density of States (PDOS) data and capable of predicting the electronic structure of materials at extremely low computational cost. With this model, we were able to generate PDOS fingerprints for all compounds present in the Materials Projects Database and cluster them by the similarity of their orbital PDOS, and therefore electronic properties. We demonstrate that using PDOS fingerprints allows finding materials that have similar electronic properties but drastically different structures.
+Code and models for **"Navigating the Materials Space with ML-Generated Electronic Fingerprints"** paper. 
 
-## The model is available via web application: [ProDosMate](https://huggingface.co/spaces/inep/prodosmate "ProDosMate")
-### Predict the Projected Density of States
+Identifying materials with strong performance in a target application usually means searching for compounds electronically similar to a known reference — but computing electronic structure (density of states, band structure) for hundreds of thousands of candidates via DFT is far too expensive for high-throughput screening. **ProDosNet** is a graph convolutional network trained on atom- and orbital-resolved projected density of states (PDOS) from the Materials Project that predicts electronic structure at a fraction of the DFT cost. We use it to generate PDOS fingerprints for 147,472 Materials Project compounds and show that clustering by PDOS similarity surfaces materials with similar electronic properties but very different crystal structures — with applications in photovoltaics, oxygen-evolution catalysis, solid-state Li-ion conductors, and battery cathodes.
+
+Try the model interactively: **[ProDosMate](https://huggingface.co/spaces/inep/prodosmate)** (Hugging Face).
+
 <p align="center">
-  <img src="https://github.com/ineporozhnii/pdos_gnn/blob/main/assets/ProDosMate_demo_predict_pdos.gif" alt="animated" />
+  <img src="assets/ProDosMate_demo_predict_pdos.gif" alt="ProDosMate: predicting PDOS interactively" />
 </p>
 
-### Find materials with similar PDOS
-### Explore material space structured by PDOS similarity 
+## Table of contents
+- [Repository structure](#repository-structure)
+- [Installation](#installation)
+- [Reproducing the paper](#reproducing-the-paper)
+- [Data availability](#data-availability)
+- [Citation](#citation)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
 
-## Setup locally
-1. Clone the repository
-    - `git clone git@github.com:ineporozhnii/pdos_gnn.git`
-2. Create a virtual environment:
-    - `cd pdos_gnn/`
-    - `python -m venv pdos_gnn_env`
-    - `source pdos_gnn_env/bin/activate`
-3. To install project run: 
-    - `pip install -e .`
-  
-## Run locally
-1. Preprocess data for training from raw Materials Project PDOS
-  - `python main.py --task preprocess  --preprocess_ids path/to/ids.csv --cif_dir path/to/cif_files --dos_dir path/to/raw_dos_files`
-2. Run training
-  - `python main.py --task cross_val  --train_ids path/to/train_ids.csv --data_file path/to/processed_data.tar`
-3. Predict using a pre-trained model
-  - `python main.py --task test  --test_ids path/to/test_ids.csv --data_file path/to/processed_data.tar --model path/to/pretrained_pdos_model.pth.tar`
+## Repository structure
+
+```
+pdos_gnn/
+  pdos_gnn/                 # Installable package: ProDosNet model + training/inference CLI
+    main.py                   #   CLI entry point (--task preprocess|cross_val|test|predict)
+    models/crystal_model.py    #   ProDosNet
+    utilities/                 #   Data preprocessing, training loop, dataset, helpers
+    pretrained/                 #   Pretrained model checkpoint
+  scripts/                  # Standalone analysis/figure-generation scripts
+  notebooks/                # Jupyter notebooks for analysis in the paper
+  data/                     # Example/reference data 
+  assets/                   # README media
+```
+
+## Installation
+
+```bash
+git clone git@github.com:ineporozhnii/pdos_gnn.git
+cd pdos_gnn/
+python -m venv pdos_gnn_env
+source pdos_gnn_env/bin/activate
+pip install -e .
+```
+
+### CLI quick reference (`pdos_gnn/main.py`)
+
+```bash
+# 1. Preprocess raw CIF + DOS data into crystal graphs
+python main.py --task preprocess --preprocess_ids path/to/ids.csv --cif_dir path/to/cifs --dos_dir path/to/dos_json
+
+# 2. Train via k-fold cross-validation (paper uses --use_cdf, the Wasserstein-equivalent loss)
+python main.py --task cross_val --train_ids path/to/train_ids.csv --data_file path/to/processed_data.tar --use_cdf
+
+# 3. Evaluate a trained/pretrained model on a held-out test set
+python main.py --task test --test_ids path/to/test_ids.csv --data_file path/to/processed_data.tar --model path/to/checkpoint.pth.tar --use_cdf
+
+# 4. Predict PDOS fingerprints for new materials (no DFT target needed)
+python main.py --task predict --predict_ids path/to/ids.csv --cif_dir path/to/cifs --model pretrained/pretrained_pdos_model.pth.tar
+```
+
+## Data availability
+
+Reference files (train/test material-id splits, materials property table, example CIF/DOS files) are included in `data/`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
