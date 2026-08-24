@@ -1,3 +1,6 @@
+"""
+    Training and evaluation loops for ProDosNet.
+"""
 import torch
 import itertools
 import numpy as np
@@ -12,7 +15,6 @@ from torch_geometric.loader import DataLoader
 from models.crystal_model import ProDosNet
 from torch.nn.functional import mse_loss
 from utilities.utils import save_model, save_training_curves, save_cv_results, print_output, plot_training_curve
-#import matplotlib.pyplot as plt
 
 def run_cross_validation(config: dict, args, save_path: str):
     """
@@ -41,9 +43,14 @@ def run_cross_validation(config: dict, args, save_path: str):
     splits = KFold(n_splits=args.kfold, shuffle=True, random_state=42)
 
     print("------------------------ Training Model ------------------------ \n")
+    # Populated per-fold below (once fold_training_curves_dict's keys are known) and
+    # used after the fold loop to report each metric's cross-fold mean/std via
+    # save_cv_results().
+    error_type_list = None
+    cv_lists = None
     for fold, (train_ids, val_ids) in enumerate(splits.split(np.arange(len(dataset)))):
 
-        model = ProDosNet(orig_atom_fea_len=dataset[0].x.shape[1], nbr_fea_len=dataset[0].edge_attr.shape[1], n_conv=config["n_conv"], use_mlp=args.use_mlp, use_cdf=args.use_cdf)
+        model = ProDosNet(orig_atom_fea_len=dataset[0].x.shape[1], nbr_fea_len=dataset[0].edge_attr.shape[1], n_conv=config["n_conv"])
 
         if args.cuda:
             device = torch.device("cuda")
@@ -136,6 +143,18 @@ def run_cross_validation(config: dict, args, save_path: str):
             for key, item in val_error_dict.items():
                 fold_training_curves_dict[key].append(item)
 
+            # Computed here (before the save-interval block below, which logs it) so
+            # that a --model_save_interval of 1 doesn't reference it before assignment
+            # on the very first epoch.
+            n_parameters = 0
+            layer_sum_list = []
+            for parameters in model.parameters():
+                n_parameters += torch.numel(parameters)
+                parameters_np = parameters.cpu().data.numpy()
+                layer_sum_list.append(np.sum(np.abs(parameters_np)))
+            total_weight_sum = np.sum(layer_sum_list).item()/n_parameters
+            fold_training_curves_dict['model_weight_sum'].append(total_weight_sum)
+
             if epoch%args.model_save_interval == 0:
                 train_error_ws_dict = train_error_dict
                 train_error_ws_dict['model_weight_sum'] = total_weight_sum
@@ -164,16 +183,6 @@ def run_cross_validation(config: dict, args, save_path: str):
             val_cdf_pdos_rmse = val_error_dict['val_orbital_pdos_mse_cdf']
             train_cdf_pdos_rmse = train_error_dict['train_orbital_pdos_mse_cdf']
 
-            n_parameters = 0
-            layer_sum_list = []
-            for parameters in model.parameters():
-                n_parameters += torch.numel(parameters)
-                parameters_np = parameters.cpu().data.numpy()
-                layer_sum_list.append(np.sum(np.abs(parameters_np)))
-            total_weight_sum = np.sum(layer_sum_list).item()/n_parameters
-
-            fold_training_curves_dict['model_weight_sum'].append(total_weight_sum)
-       
             if epoch == 1:
                 best_val_loss = val_loss
                 best_train_loss = train_loss
@@ -214,13 +223,20 @@ def run_cross_validation(config: dict, args, save_path: str):
 
         
 
-        
+
         save_training_curves(fold+1, fold_training_curves_dict, save_path)
 
+        # Record this fold's best (min) value for each metric, for the cross-fold summary.
+        if error_type_list is None:
+            error_type_list = list(fold_training_curves_dict.keys())
+            cv_lists = [[] for _ in error_type_list]
+        for metric_idx, key in enumerate(error_type_list):
+            cv_lists[metric_idx].append(np.min(fold_training_curves_dict[key]))
 
     print("----------------- Finished Cross-Validation -----------------")
-   
-    #save_cv_results(args.kfold, training_curve_name_list, cv_lists, mean_list, std_list, save_path)
+    mean_list = [np.mean(values) for values in cv_lists]
+    std_list = [np.std(values) for values in cv_lists]
+    save_cv_results(args.kfold, error_type_list, cv_lists, mean_list, std_list, save_path)
 
     if args.save_dos or args.save_pdos:
         print("------------------- Saving Predicted PDOS -------------------")

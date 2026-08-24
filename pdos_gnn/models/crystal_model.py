@@ -8,16 +8,18 @@ from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn import global_add_pool as gsp
 from torch_geometric.typing import PairTensor, Adj, Size
 
+
 class CrystalGraphConv(MessagePassing):
-    def __init__(self, nbr_fea_len, l1, l2, use_cdf, atom_fea_len=64,
-                 aggr: str = 'add', bias: bool = True, **kwargs):
+    """
+        One crystal-graph convolution layer (modified CGCNN, Xie & Grossman 2018):
+        updates each atom's embedding from its neighbors' embeddings and bond features.
+    """
+    def __init__(self, nbr_fea_len, l1, l2, atom_fea_len=64, aggr: str = 'add', **kwargs):
         super(CrystalGraphConv, self).__init__(aggr=aggr, flow='target_to_source', **kwargs)
-        self.use_cdf = use_cdf
         self.atom_fea_len = atom_fea_len
         self.nbr_fea_len = nbr_fea_len
 
         self.BatchNorm = BatchNorm(self.atom_fea_len)
-        self.sigmoid = nn.Sigmoid()
         self.softplus = nn.Softplus()
 
         self.mlp = nn.Sequential(
@@ -43,10 +45,15 @@ class CrystalGraphConv(MessagePassing):
     def update(self, x, edge_attr):
         return x, edge_attr
 
+
 class ProDosNet(nn.Module):
+    """
+        Graph convolutional network that predicts orbital-projected density of states
+        (PDOS) for every atom in a crystal.
+    """
 
     def __init__(self, orig_atom_fea_len, nbr_fea_len,
-                 atom_fea_len=64, n_conv=3, h_fea_len=128, n_h=1, l1=256, l2=256, grid=256, n_orbitals=9, use_mlp=True, use_cdf=False,):
+                 atom_fea_len=64, n_conv=3, h_fea_len=128, n_h=1, l1=256, l2=256, grid=256, n_orbitals=9):
         super(ProDosNet, self).__init__()
         self.l1 = l1
         self.l2 = l2
@@ -55,7 +62,7 @@ class ProDosNet(nn.Module):
         self.embedding_1 = nn.Linear(orig_atom_fea_len, orig_atom_fea_len)
         self.embedding_2 = nn.Linear(orig_atom_fea_len, orig_atom_fea_len)
         self.convs = nn.ModuleList([CrystalGraphConv(atom_fea_len=orig_atom_fea_len,
-                                    nbr_fea_len=nbr_fea_len, l1=self.l1, l2=self.l2, use_cdf=use_cdf)
+                                    nbr_fea_len=nbr_fea_len, l1=self.l1, l2=self.l2)
                                     for _ in range(n_conv)])
 
         self.embed_softplus = nn.Softplus()
@@ -70,7 +77,16 @@ class ProDosNet(nn.Module):
         self.dropout_2 = nn.Dropout(p=0.2)
 
 
-    def forward(self, node_fea, edge_index, edge_attr, batch, atoms_batch, use_cdf=False, train_on_pdos=False): 
+    def forward(self, node_fea, edge_index, edge_attr, batch, atoms_batch, use_cdf=False, train_on_pdos=False):
+        """
+            Returns (pdos, atomic_dos, dos):
+                - pdos:        [n_atoms*n_orbitals, grid] predicted orbital PDOS
+                - atomic_dos:  [n_atoms, grid] orbital-summed DOS per atom
+                - dos:         [n_structures, grid] atom-summed total DOS per structure
+            use_cdf selects the dense-head branch used when training on cumulative
+            densities (CDFs) rather than raw densities; train_on_pdos selects the direct
+            single-layer PDOS head used only for raw-density (non-CDF) orbital training.
+        """
         node_fea = self.embedding_1(node_fea)
         node_fea = self.embed_softplus(node_fea)
         node_fea = self.embedding_2(node_fea)

@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from datetime import date
 from utilities.data import MaterialData
+from utilities.utils import get_spd_pdos
 from models.crystal_model import ProDosNet
 from utilities.preprocess import CrystalGraphPDOS
 from torch_geometric.loader import DataLoader
@@ -113,7 +114,7 @@ def main(args):
         test_loader = DataLoader(test_dataset, batch_size=args.batch_size)
         test_ids_file_name = os.path.basename(args.test_ids)
         
-        model = ProDosNet(orig_atom_fea_len=test_dataset[0].x.shape[1], nbr_fea_len=test_dataset[0].edge_attr.shape[1], n_conv=config["n_conv"], use_mlp=args.use_mlp)
+        model = ProDosNet(orig_atom_fea_len=test_dataset[0].x.shape[1], nbr_fea_len=test_dataset[0].edge_attr.shape[1], n_conv=config["n_conv"])
 
         if args.cuda:
             device = torch.device("cuda")
@@ -124,38 +125,83 @@ def main(args):
         print("------------------------- Finished Test ------------------------ \n")
 
 
-    # If task is predict, use pretrained model to predict on data that does not have target values for PDOS 
+    # If task is predict, use a pretrained model to predict PDOS fingerprints for materials
+    # that have no DFT-computed PDOS
     if args.task == "predict":
-        assert args.predict_ids is not None, "Please provide list of material ids to preprocess."
-        assert args.cif_dir is not None, "Please provide directory with material cif files." 
+        assert args.predict_ids is not None, "Please provide a csv file with mp-ids for prediction (predict_ids.csv)."
+        assert os.path.exists(args.predict_ids), 'Provided csv file with list of material ids for prediction does not exist!'
+        assert args.cif_dir is not None, "Please provide directory with material cif files."
+        assert os.path.exists(args.cif_dir), 'Provided directory with material cif files does not exist!'
+        assert args.model is not None, "Please provide path to a pretrained model."
+        assert os.path.exists(args.model), 'Provided pretrained model path does not exist!'
 
-        if args.save_data_dir is None:
-            if not os.path.exists('processed_data'):
-                os.makedirs('processed_data')
-            args.save_data_dir = 'processed_data'
-
-        preprocess_data = ""
+        predict_ids = pd.read_csv(args.predict_ids).iloc[:, 0].tolist()
 
         graph_gen = CrystalGraphPDOS(dos_dir=args.dos_dir,
-                                     cif_dir=args.cif_dir, 
-                                     max_num_nbr=args.max_num_nbr, 
+                                     cif_dir=args.cif_dir,
+                                     max_num_nbr=args.max_num_nbr,
                                      max_element=args.max_element,
-                                     bound_high=args.bound_high,
-                                     bound_low=args.bound_low,  
                                      radius=args.radius,
-                                     sigma=args.sigma, 
+                                     sigma=args.sigma,
                                      grid=args.grid)
-                                     
-        for index, _ in tqdm(preprocess_data.iterrows()):
-            cif_id = preprocess_data.iloc[index, 0]
+
+        pretrained_model = torch.load(args.model, map_location=torch.device('cpu'))
+        device = torch.device("cuda") if args.cuda else torch.device("cpu")
+        model = None  # built lazily once feature dimensions are known from the first graph
+        train_on_pdos = not (args.train_on_dos or args.train_on_atomic_dos)
+
+        fingerprint_rows = []
+        predicted_ids = []
+        failed_ids = []
+        for cif_id in tqdm.tqdm(predict_ids, desc="Predicting PDOS"):
             graph = graph_gen.get_crystal_pdos_graph_pred(os.path.join(args.cif_dir, f"{cif_id}.cif"))
+            if graph is None:
+                failed_ids.append(cif_id)
+                continue
+
+            graph = graph.to(device)
+            edge_attr = torch.squeeze(graph.edge_attr, 1)
+
+            if model is None:
+                # nbr_fea_len must come from the squeezed edge_attr: CrystalGraphPDOS
+                # stores bond features with an extra singleton dim (n_edges, 1, n_feat),
+                # so graph.edge_attr.shape[1] before squeezing is always 1, not n_feat.
+                model = ProDosNet(orig_atom_fea_len=graph.x.shape[1], nbr_fea_len=edge_attr.shape[1], n_conv=args.n_conv)
+                model.load_state_dict(pretrained_model['state_dict'])
+                model.to(device)
+                model.eval()
+
+            with torch.no_grad():
+                pdos, atomic_dos, dos = model(graph.x, graph.edge_index, edge_attr, batch=None,
+                                               atoms_batch=graph.atoms_batch, use_cdf=args.use_cdf,
+                                               train_on_pdos=train_on_pdos)
+
+            n_atoms = int(atomic_dos.shape[0])
+            spd_fingerprint = get_spd_pdos(pdos.cpu().numpy(), graph.orbital_types, n_atoms)
+            fingerprint_rows.append(spd_fingerprint)
+            predicted_ids.append(cif_id)
+
+        # With --use_cdf (matching the pretrained checkpoint's training regime), the
+        # model's raw output IS the cumulative density (CDF), not the density itself --
+        # this matches the fingerprint format the rest of the pipeline (e.g.
+        # search_for_similar_materials.ipynb's "pdos_all_data_cdf") expects and stores.
+        fingerprint_kind = "cdf" if args.use_cdf else "pdos"
+        grid_cols = [f"{orb}_{fingerprint_kind}_{i}" for orb in ("s", "p", "d") for i in range(args.grid)]
+        fingerprint_df = pd.DataFrame(fingerprint_rows, columns=grid_cols)
+        fingerprint_df.insert(0, "id", predicted_ids)
+
+        fingerprint_file = os.path.join(save_path, f"predicted_pdos_fingerprints_{fingerprint_kind}.csv")
+        fingerprint_df.to_csv(fingerprint_file, index=False)
+
+        print(f" Predicted PDOS fingerprints ({fingerprint_kind}) for {len(predicted_ids)} materials. Saved to {fingerprint_file}")
+        if failed_ids:
+            failed_file = os.path.join(save_path, "failed_to_predict_ids.csv")
+            pd.DataFrame({"failed_ids": failed_ids}).to_csv(failed_file, index=False)
+            print(f" Failed to process {len(failed_ids)} materials. See {failed_file}")
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="PDOS Net")
-
-    parser.add_argument("--data_dir", default=None,
-                        help="Provide data directory. Default: None")
 
     parser.add_argument("--data_file", default=None,
                         help="Provide dataset tar file name. Default: None")
@@ -169,8 +215,8 @@ if __name__ == '__main__':
     parser.add_argument("--model_name", default="crystal_model",
                         help="Provide model name. Default: crystal_model")
 
-    parser.add_argument("--task", choices=['preprocess', 'cross_val', 'test', 'predict'], default="train_cv",
-                        help="Choose task from available options ")
+    parser.add_argument("--task", choices=['preprocess', 'cross_val', 'test', 'predict'], required=True,
+                        help="Choose task to run: preprocess raw data, cross_val (train), test, or predict.")
                         
     parser.add_argument("--train_ids", default="train_ids.csv",
                         help="Provide csv file with mp-ids for k-fold cross-validation. Default: train_ids.csv")
@@ -208,9 +254,6 @@ if __name__ == '__main__':
     parser.add_argument("--grid", default=256, type=int, 
                         help="Provide number of grid points to represent DOS. Default: 256")
     
-    parser.add_argument("--model_config", default="utilites/default_config.json",
-                        help="Provide model configuration. Default: default_config.json")
-
     parser.add_argument("--model", default=None,
                         help="Provide pretrained model. Default: None")
 
@@ -234,9 +277,6 @@ if __name__ == '__main__':
 
     parser.add_argument("--kfold", default=5, type=int,
                         help="Provide number of folds for k-fold cross validation. Default: 5")
-
-    parser.add_argument("--skip_embedding", default=False, action='store_true',
-                        help="Skip embedding layes in model. Default: False")
 
     parser.add_argument("--train_on_dos", default=False, action='store_true',
                         help="If True, trains on total DOS instead of orbital PDOS. Default: False")
@@ -266,11 +306,8 @@ if __name__ == '__main__':
                         help="Saves predicted PDOS only for first fold during cross-validation run. Default: True")
                         
     parser.add_argument("--use_cdf", default=False, action='store_true',
-                        help="If True, uses RMSE of CDFs as loss function. Default False")
-                        
-    parser.add_argument("--use_mlp", default=False, action='store_true',
-                        help="If True, uses fully connected NN in graph convolution. Default: False")
-    
+                        help="If True, trains/evaluates on cumulative (CDF) densities. Default: False")
+
     parser.add_argument("--scale", default=False, action='store_true',
                         help="If True, rescales bond distances to [0, 1] range. Default: False")
     

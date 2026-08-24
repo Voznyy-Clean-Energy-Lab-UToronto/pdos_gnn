@@ -3,6 +3,7 @@ import json
 import torch
 import warnings
 import numpy as np
+from pathlib import Path
 from typing import Union, List
 from torch import Tensor, LongTensor
 from torch_geometric.data import Data
@@ -12,7 +13,10 @@ from pymatgen.core.structure import Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.electronic_structure.core import Orbital
 from pymatgen.electronic_structure.dos import CompleteDos
-import matplotlib.pyplot as plt
+
+# Feature JSON files live in pdos_gnn/features/, resolved relative to this module
+# so the code works regardless of the caller's working directory.
+_FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
 
 class GaussianDistance(object):
     def __init__(self, dmin, dmax, step, var=None):
@@ -103,12 +107,11 @@ class CrystalGraphPDOS():
         self.orbital_name_list = ["s", "py", "pz", "px", "dxy", "dyz", "dz2", "dxz", "dx2"]
         self.spin=Spin(1)
 
-        features_dir = os.path.join(os.path.dirname(__file__), '../features')
-        with open(f"{features_dir}/atom_features_one_hot.json", "r") as element_one_hot_features_file:
+        with open(_FEATURES_DIR / "atom_features_one_hot.json", "r") as element_one_hot_features_file:
                     self.element_one_hot_features = json.load(element_one_hot_features_file)
-        with open(f"{features_dir}/orbit_radius_fea_scaled.json", "r") as orbit_radius_fea_file:
+        with open(_FEATURES_DIR / "orbit_radius_fea_scaled.json", "r") as orbit_radius_fea_file:
                     self.orbit_radius_fea = json.load(orbit_radius_fea_file)
-        with open(f"{features_dir}/n_electrons.json", "r") as n_electrons_file:
+        with open(_FEATURES_DIR / "n_electrons.json", "r") as n_electrons_file:
                     self.n_electrons_dict = json.load(n_electrons_file)
 
 
@@ -226,6 +229,10 @@ class CrystalGraphPDOS():
 
 
     def _get_node_features(self, material_file_name, crystal, crystal_orbital_name_list, crystal_orbital_index_list, efermi=None, complete_dos=None, total_dos_norm_coef=None, for_training=False):
+        """
+            Builds per-atom node features and, if for_training, interpolates/broadens each
+            atom's per-orbital PDOS onto the shared energy grid to use as training targets.
+        """
         sites = []
         elements = []
         atom_fea = []
@@ -299,10 +306,6 @@ class CrystalGraphPDOS():
             target_dos_cdf = torch.sum(target_pdos_cdf, dim=0)
             target_dos_cdf = torch.unsqueeze(target_dos_cdf, 0)
             e_diff = Tensor([e_diff])
-            plt.title(material_file_name)
-            plt.plot(np.linspace(-20, 10, 256), target_dos.detach().numpy()[0])
-            plt.show()
-            return
             return atom_fea, target_dos, target_pdos, target_dos_cdf, target_pdos_cdf, elements, sites, orbital_types, orbital_max_density_list, e_diff
 
         return atom_fea, elements, sites, orbital_types

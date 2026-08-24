@@ -1,6 +1,8 @@
 import json
 import torch
+import numpy as np
 import pandas as pd
+from typing import List
 import matplotlib.pyplot as plt
 
 
@@ -89,6 +91,34 @@ def plot_training_curve(save_path: str, val_loss_list: list, train_loss_list: li
     plt.legend(loc = 'best')
     plt.title("Training Curve", loc='center')
     plt.savefig(f'%s/trainingcurve_fold_{fold}'%save_path + '.png')
+
+def get_spd_pdos(orbital_pdos: np.ndarray, orbital_types: List[str], n_atoms: int) -> np.ndarray:
+    """
+        Aggregates a material's predicted per-atom, per-orbital output into the s/p/d
+        fingerprint vector used for PDOS similarity search: sums within each orbital
+        manifold across all atoms, then normalizes by atom count. Representation-agnostic
+        -- orbital_pdos may be raw densities or cumulative densities (CDFs); the caller's
+        choice of `use_cdf` when running the model determines which one this receives,
+        and the output is that same representation (e.g. a "cdf" fingerprint if the model
+        was called with use_cdf=True, matching the pipeline's stored
+        materials_space_pdos_fingeprints.csv.gz / "pdos_all_data_cdf" convention).
+        Input:
+            - orbital_pdos:   [n_atoms*n_orbitals, grid] predicted orbital PDOS or CDF
+            - orbital_types:  orbital name (e.g. "s", "px", "dxy") for each row above
+            - n_atoms:        number of atoms in the unit cell, for normalization
+        Output:
+            - fingerprint:    [3*grid] concatenated [s, p, d] vector, same representation as input
+    """
+    p_orbitals = ("px", "py", "pz")
+    d_orbitals = ("dxy", "dyz", "dz2", "dxz", "dx2")
+    orbital_types = np.asarray(orbital_types)
+
+    s_pdos = orbital_pdos[orbital_types == "s"].sum(axis=0)
+    p_pdos = orbital_pdos[np.isin(orbital_types, p_orbitals)].sum(axis=0)
+    d_pdos = orbital_pdos[np.isin(orbital_types, d_orbitals)].sum(axis=0)
+
+    return np.concatenate([s_pdos, p_pdos, d_pdos]) / n_atoms
+
 
 def plot_output_distribution(data, data_pred, epoch):
     data = data.detach().numpy().flatten()
