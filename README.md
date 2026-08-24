@@ -13,11 +13,9 @@ Try the model interactively: **[ProDosMate](https://huggingface.co/spaces/inep/p
 ## Table of contents
 - [Repository structure](#repository-structure)
 - [Installation](#installation)
-- [Reproducing the paper](#reproducing-the-paper)
+- [CLI quick reference](#cli-quick-reference)
 - [Data availability](#data-availability)
-- [Citation](#citation)
 - [License](#license)
-- [Acknowledgments](#acknowledgments)
 
 ## Repository structure
 
@@ -44,7 +42,9 @@ source pdos_gnn_env/bin/activate
 pip install -e .
 ```
 
-### CLI quick reference (`pdos_gnn/main.py`)
+## CLI quick reference
+
+All tasks run through `pdos_gnn/main.py`:
 
 ```bash
 # 1. Preprocess raw CIF + DOS data into crystal graphs
