@@ -171,3 +171,25 @@ data/cif_dir/
 data/dos_dir/
 submit.sh
 *.sh
+
+_archive/
+papers/
+
+data/MD_data/
+data/materials_space_pdos_fingeprints.csv.gz
+processed_data.tar
+processed_data.tar.zip
+*.parquet
+spd_pdos_*.csv.gz
+umap_coord_*.csv
+
+# Dated experiment run directories
+20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]_pdos_gnn_*/
+results_from_*/
+results_from_*.tar
+
+# Per-material scratch output folders (generated figures/analysis, not source)
+mp-[0-9]*/
+notebooks/mp-[0-9]*/
+
+.vscode/
