@@ -1,0 +1,1 @@
+"""ProDosNet model architecture."""
