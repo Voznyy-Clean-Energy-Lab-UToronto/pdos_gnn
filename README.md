@@ -4,6 +4,14 @@ Code and models for **"Navigating the Materials Space with ML-Generated Electron
 
 Identifying materials with strong performance in a target application usually means searching for compounds electronically similar to a known reference — but computing electronic structure (density of states, band structure) for hundreds of thousands of candidates via DFT is far too expensive for high-throughput screening. **ProDosNet** is a graph convolutional network trained on atom- and orbital-resolved projected density of states (PDOS) from the Materials Project that predicts electronic structure at a fraction of the DFT cost. We use it to generate PDOS fingerprints for 147,472 Materials Project compounds and show that clustering by PDOS similarity surfaces materials with similar electronic properties but very different crystal structures — with applications in photovoltaics, oxygen-evolution catalysis, solid-state Li-ion conductors, and battery cathodes.
 
+<p align="center">
+  <img src="assets/prodosnet_architecture.png" alt="ProDosNet architecture: graph convolution layers produce updated atomic embeddings, which feedforward layers map to orbital-resolved PDOS for every atom" />
+</p>
+
+<p align="center">
+  <em>ProDosNet architecture: graph convolution layers produce updated atomic embeddings, which feedforward layers map to orbital-resolved PDOS for every atom.</em>
+</p>
+
 Try the model interactively: **[ProDosMate](https://huggingface.co/spaces/inep/prodosmate)** (Hugging Face).
 
 <p align="center">
