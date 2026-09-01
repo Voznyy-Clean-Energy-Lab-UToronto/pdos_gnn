@@ -61,6 +61,7 @@ notebooks = [
 ]
 
 [project.urls]
+Paper = "https://doi.org/10.1103/g86f-dn26"
 Repository = "https://github.com/ineporozhnii/pdos_gnn"
 Demo = "https://huggingface.co/spaces/inep/prodosmate"
 

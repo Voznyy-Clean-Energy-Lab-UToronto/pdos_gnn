@@ -1,6 +1,6 @@
 # ProDosNet: Navigating the Materials Space with ML-Generated Electronic Fingerprints
 
-Code and models for **"Navigating the Materials Space with ML-Generated Electronic Fingerprints"** paper. 
+Code and models for the paper **["Navigating the Materials Space with Machine-Learning-Generated Electronic Fingerprints"](https://link.aps.org/doi/10.1103/g86f-dn26)**.
 
 Identifying materials with strong performance in a target application usually means searching for compounds electronically similar to a known reference — but computing electronic structure (density of states, band structure) for hundreds of thousands of candidates via DFT is far too expensive for high-throughput screening. **ProDosNet** is a graph convolutional network trained on atom- and orbital-resolved projected density of states (PDOS) from the Materials Project that predicts electronic structure at a fraction of the DFT cost. We use it to generate PDOS fingerprints for 147,472 Materials Project compounds and show that clustering by PDOS similarity surfaces materials with similar electronic properties but very different crystal structures — with applications in photovoltaics, oxygen-evolution catalysis, solid-state Li-ion conductors, and battery cathodes.
 
@@ -23,6 +23,7 @@ Try the model interactively: **[ProDosMate](https://huggingface.co/spaces/inep/p
 - [Installation](#installation)
 - [CLI quick reference](#cli-quick-reference)
 - [Data availability](#data-availability)
+- [Citation](#citation)
 - [License](#license)
 
 ## Repository structure
@@ -71,6 +72,31 @@ python main.py --task predict --predict_ids path/to/ids.csv --cif_dir path/to/ci
 ## Data availability
 
 Reference files (train/test material-id splits, materials property table, example CIF/DOS files) are included in `data/`.
+
+## Citation
+
+If you use this code, the pretrained model, or the generated PDOS fingerprints in your work, please cite:
+
+> I. Neporozhnii, Z. Wang, R. Bajpai, C. Gomez, N. Chakraborty, T. Dong, I. Tamblyn, S. Hoogland, and O. Voznyy,
+> *Navigating the Materials Space with Machine-Learning-Generated Electronic Fingerprints*,
+> PRX Intelligence **1**, 013014 (2026). [doi:10.1103/g86f-dn26](https://doi.org/10.1103/g86f-dn26)
+
+```bibtex
+@article{g86f-dn26,
+  title = {Navigating the Materials Space with Machine-Learning-Generated Electronic Fingerprints},
+  author = {Neporozhnii, I. and Wang, Z. and Bajpai, R. and Gomez, C. and Chakraborty, N. and Dong, T. and Tamblyn, I. and Hoogland, S. and Voznyy, O.},
+  journal = {PRX Intelligence},
+  volume = {1},
+  issue = {1},
+  pages = {013014},
+  numpages = {9},
+  year = {2026},
+  month = {Aug},
+  publisher = {American Physical Society},
+  doi = {10.1103/g86f-dn26},
+  url = {https://link.aps.org/doi/10.1103/g86f-dn26}
+}
+```
 
 ## License
 
